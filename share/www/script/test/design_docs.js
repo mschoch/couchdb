@@ -37,7 +37,69 @@ couchTests.design_docs = function(debug) {
       while(power-- > 0) {
         str = str + str;
       }
-      return str;
+    },
+    views: {
+      all_docs_twice: {map: "function(doc) { emit(doc.integer, null); emit(doc.integer, null) }"},
+      no_docs: {map: "function(doc) {}"},
+      single_doc: {map: "function(doc) { if (doc._id == \"1\") { emit(1, null) }}"},
+      summate: {map:"function (doc) {emit(doc.integer, doc.integer)};",
+                reduce:"function (keys, values) { return sum(values); };"},
+      summate2: {map:"function (doc) {emit(doc.integer, doc.integer)};",
+                reduce:"function (keys, values) { return sum(values); };"},
+      huge_src_and_results: {map: "function(doc) { if (doc._id == \"1\") { emit(\"" + makebigstring(16) + "\", null) }}",
+                reduce:"function (keys, values) { return \"" + makebigstring(16) + "\"; };"}
+    },
+    shows: {
+      simple: "function() {return 'ok'};",
+      requirey : "function() { var lib = require('whatever/commonjs/upper'); return lib.testing; };"
+    }
+  }; 
+
+  var xhr = CouchDB.request("PUT", "/test_suite_db_a/_design/test", {body: JSON.stringify(designDoc)});
+  var resp = JSON.parse(xhr.responseText);
+  
+  TEquals(resp.rev, db.save(designDoc).rev);
+
+  // test that editing a show fun on the ddoc results in a change in output
+  var xhr = CouchDB.request("GET", "/test_suite_db/_design/test/_show/simple");
+  T(xhr.status == 200);
+  TEquals(xhr.responseText, "ok");
+
+  designDoc.shows.simple = "function() {return 'ko'};"
+  T(db.save(designDoc).ok);
+
+  var xhr = CouchDB.request("GET", "/test_suite_db/_design/test/_show/simple");
+  T(xhr.status == 200);
+  TEquals(xhr.responseText, "ko");
+
+  var xhr = CouchDB.request("GET", "/test_suite_db_a/_design/test/_show/simple?cache=buster");
+  T(xhr.status == 200);
+  TEquals("ok", xhr.responseText, 'query server used wrong ddoc');
+
+  // test commonjs require
+  var xhr = CouchDB.request("GET", "/test_suite_db/_design/test/_show/requirey");
+  T(xhr.status == 200);
+  TEquals("PLANKTONwhatever/commonjs/upper", xhr.responseText);
+
+  // test that we get design doc info back
+  var dinfo = db.designInfo("_design/test");
+  TEquals("test", dinfo.name);
+  var vinfo = dinfo.view_index;
+  TEquals(51, vinfo.disk_size);
+  TEquals(false, vinfo.compact_running);
+  TEquals("b8808fb9ef8e401c8f72764e31939690", vinfo.signature);
+
+  db.bulkSave(makeDocs(1, numDocs + 1));
+
+  // test that the _all_docs view returns correctly with keys
+  var results = db.allDocs({startkey:"_design", endkey:"_design0"});
+  T(results.rows.length == 1);
+
+  for (var loop = 0; loop < 2; loop++) {
+    var rows = db.view("test/all_docs_twice").rows;
+    for (var i = 0; i < numDocs; i++) {
+      T(rows[2*i].key == i+1);
+      T(rows[(2*i)+1].key == i+1);
     }
 
     var designDoc = {
