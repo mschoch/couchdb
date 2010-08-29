@@ -82,6 +82,10 @@ source_files = \
     couch_view_compactor.erl \
     couch_view_updater.erl \
     couch_view_group.erl \
+    couch_view_server.erl \
+    couch_view_server_emonk.erl \
+    couch_view_server_erlang.erl \
+    couch_view_server_os.erl \
     couch_db_updater.erl \
     couch_work_queue.erl
 
@@ -144,6 +148,10 @@ compiled_files = \
     couch_view_compactor.beam \
     couch_view_updater.beam \
     couch_view_group.beam \
+    couch_view_server.beam \
+    couch_view_server_emonk.beam \
+    couch_view_server_erlang.beam \
+    couch_view_server_os.beam \
     couch_db_updater.beam \
     couch_work_queue.beam
 

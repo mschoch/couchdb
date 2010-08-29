@@ -24,6 +24,13 @@ function loadScript(url) {
   if (typeof document != "undefined") document.write('<script src="'+url+'"></script>');
 };
 
+function showTest(testElem)
+{
+  var x = $(testElem).offset().left;
+  var y = $(testElem).offset().top;
+  window.scrollTo(x, y);
+}
+
 function patchTest(fun) {
   var source = fun.toString();
   var output = "";
@@ -77,6 +84,7 @@ function runTest(button, callback, debug, noSave) {
     return;
   }
   var row = currentRow = $(button).parents("tr").get(0);
+  showTest(row);
   $("td.status", row).removeClass("error").removeClass("failure").removeClass("success");
   $("td", row).text("");
   $("#toolbar li.current").text("Running: "+row.id);
