@@ -21,7 +21,7 @@ var resolveModule = function(names, mod, root) {
       parent : mod.parent,
       id : mod.id,
       exports : {}
-    }
+    };
   }
   // we need to traverse the path
   var n = names.shift();
@@ -119,7 +119,7 @@ var Couch = {
       }
     }
   }
-}
+};
 
 // prints the object as JSON, and rescues and logs any toJSON() related errors
 function respond(obj) {
