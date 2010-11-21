@@ -218,7 +218,7 @@ output_map_list(Req, Db, DDoc, LName, View, QueryArgs, Etag, Keys, Group) ->
             start_response = StartListRespFun = make_map_start_resp_fun(QServer, Db, LName),
             send_row = make_map_send_row_fun(QServer)
         },
-		CurrentSeq = Group#group.current_seq,
+        CurrentSeq = Group#group.current_seq,
 
         {ok, _, FoldResult} = case Keys of
             nil ->
@@ -248,7 +248,7 @@ output_reduce_list(Req, Db, DDoc, LName, View, QueryArgs, Etag, Keys, Group) ->
         group_level = GroupLevel
     } = QueryArgs,
 
-	CurrentSeq = Group#group.current_seq,
+    CurrentSeq = Group#group.current_seq,
 
     couch_app_server:list_view(DDoc, fun(QServer) ->
         StartListRespFun = make_reduce_start_resp_fun(QServer, Db, LName),
