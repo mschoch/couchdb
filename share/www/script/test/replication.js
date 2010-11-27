@@ -637,7 +637,7 @@ couchTests.replication = function(debug) {
       names: [],
       roles: ["admin"]
     },
-    readers: {
+    members: {
       names: [],
       roles: ["reader"]
     }
@@ -701,7 +701,7 @@ couchTests.replication = function(debug) {
         names: [],
         roles: ["bar"]
       },
-      readers: {
+      members: {
         names: [],
         roles: ["foo"]
       }
