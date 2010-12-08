@@ -42,13 +42,14 @@ init({MainPid, DbName, Filepath, Fd, Options}) ->
             file:delete(Filepath ++ ".compact")
         end
     end,
-
-    Db = init_db(DbName, Filepath, Fd, Header),
+    ReaderFd = open_reader_fd(Filepath, Options),
+    Db = init_db(DbName, Filepath, Fd, ReaderFd, Header, Options),
     Db2 = refresh_validate_doc_funs(Db),
-    {ok, Db2#db{main_pid = MainPid, is_sys_db = lists:member(sys_db, Options)}}.
+    {ok, Db2#db{main_pid = MainPid}}.
 
 
 terminate(_Reason, Db) ->
+    couch_file:close(Db#db.updater_fd),
     couch_file:close(Db#db.fd),
     couch_util:shutdown_sync(Db#db.compactor_pid),
     couch_util:shutdown_sync(Db#db.fd_ref_counter),
@@ -67,7 +68,7 @@ handle_call(increment_update_seq, _From, Db) ->
     {reply, {ok, Db2#db.update_seq}, Db2};
 
 handle_call({set_security, NewSec}, _From, Db) ->
-    {ok, Ptr} = couch_file:append_term(Db#db.fd, NewSec),
+    {ok, Ptr} = couch_file:append_term(Db#db.updater_fd, NewSec),
     Db2 = commit_data(Db#db{security=NewSec, security_ptr=Ptr,
             update_seq=Db#db.update_seq+1}),
     ok = gen_server:call(Db2#db.main_pid, {db_updated, Db2}),
@@ -84,7 +85,7 @@ handle_call({purge_docs, _IdRevs}, _From,
     {reply, {error, purge_during_compaction}, Db};
 handle_call({purge_docs, IdRevs}, _From, Db) ->
     #db{
-        fd=Fd,
+        updater_fd = Fd,
         fulldocinfo_by_id_btree = DocInfoByIdBTree,
         docinfo_by_seq_btree = DocInfoBySeqBTree,
         update_seq = LastSeq,
@@ -162,9 +163,10 @@ handle_call(start_compact, _From, Db) ->
 
 handle_cast({compact_done, CompactFilepath}, #db{filepath=Filepath}=Db) ->
     {ok, NewFd} = couch_file:open(CompactFilepath),
+    ReaderFd = open_reader_fd(CompactFilepath, Db#db.options),
     {ok, NewHeader} = couch_file:read_header(NewFd),
     #db{update_seq=NewSeq} = NewDb =
-            init_db(Db#db.name, Filepath, NewFd, NewHeader),
+        init_db(Db#db.name, Filepath, NewFd, ReaderFd, NewHeader, Db#db.options),
     unlink(NewFd),
     case Db#db.update_seq == NewSeq of
     true ->
@@ -373,7 +375,7 @@ simple_upgrade_record(Old, New) when tuple_size(Old) < tuple_size(New) ->
     list_to_tuple(tuple_to_list(Old) ++ NewValuesTail).
 
 
-init_db(DbName, Filepath, Fd, Header0) ->
+init_db(DbName, Filepath, Fd, ReaderFd, Header0, Options) ->
     Header1 = simple_upgrade_record(Header0, #db_header{}),
     Header =
     case element(2, Header1) of
@@ -414,10 +416,11 @@ init_db(DbName, Filepath, Fd, Header0) ->
     {MegaSecs, Secs, MicroSecs} = now(),
     StartTime = ?l2b(io_lib:format("~p",
             [(MegaSecs*1000000*1000000) + (Secs*1000000) + MicroSecs])),
-    {ok, RefCntr} = couch_ref_counter:start([Fd]),
+    {ok, RefCntr} = couch_ref_counter:start([Fd, ReaderFd]),
     #db{
         update_pid=self(),
-        fd=Fd,
+        fd = ReaderFd,
+        updater_fd = Fd,
         fd_ref_counter = RefCntr,
         header=Header,
         fulldocinfo_by_id_btree = IdBtree,
@@ -431,9 +434,19 @@ init_db(DbName, Filepath, Fd, Header0) ->
         security_ptr = SecurityPtr,
         instance_start_time = StartTime,
         revs_limit = Header#db_header.revs_limit,
-        fsync_options = FsyncOptions
+        fsync_options = FsyncOptions,
+        options = Options
         }.
 
+open_reader_fd(Filepath, Options) ->
+    {ok, Fd} = case lists:member(sys_db, Options) of
+    true ->
+        couch_file:open(Filepath, [read_only, sys_db]);
+    false ->
+        couch_file:open(Filepath, [read_only])
+    end,
+    unlink(Fd),
+    Fd.
 
 close_db(#db{fd_ref_counter = RefCntr}) ->
     couch_ref_counter:drop(RefCntr).
@@ -454,7 +467,7 @@ refresh_validate_doc_funs(Db) ->
 
 flush_trees(_Db, [], AccFlushedTrees) ->
     {ok, lists:reverse(AccFlushedTrees)};
-flush_trees(#db{fd=Fd,header=Header}=Db,
+flush_trees(#db{updater_fd = Fd, header = Header} = Db,
         [InfoUnflushed | RestUnflushed], AccFlushed) ->
     #full_doc_info{update_seq=UpdateSeq, rev_tree=Unflushed} = InfoUnflushed,
     Flushed = couch_key_tree:map(
@@ -708,7 +721,7 @@ commit_data(Db, true) ->
     Db;
 commit_data(Db, _) ->
     #db{
-        fd = Fd,
+        updater_fd = Fd,
         filepath = Filepath,
         header = OldHeader,
         fsync_options = FsyncOptions,
@@ -737,7 +750,8 @@ commit_data(Db, _) ->
     end.
 
 
-copy_doc_attachments(#db{fd=SrcFd}=SrcDb, {Pos,_RevId}, SrcSp, DestFd) ->
+copy_doc_attachments(#db{updater_fd = SrcFd} = SrcDb, {Pos,_RevId},
+    SrcSp, DestFd) ->
     {ok, {BodyData, BinInfos}} = couch_db:read_doc(SrcDb, SrcSp),
     % copy the bin values
     NewBinInfos = lists:map(
@@ -779,10 +793,17 @@ copy_doc_attachments(#db{fd=SrcFd}=SrcDb, {Pos,_RevId}, SrcSp, DestFd) ->
         end, BinInfos),
     {BodyData, NewBinInfos}.
 
-copy_docs(Db, #db{fd=DestFd}=NewDb, InfoBySeq0, Retry) ->
-    % COUCHDB-968, make sure we prune duplicates during compaction
-    InfoBySeq = lists:usort(fun(#doc_info{id=A}, #doc_info{id=B}) -> A =< B end,
-        InfoBySeq0),
+copy_rev_tree_attachments(SrcDb, DestFd, Tree) ->
+    couch_key_tree:map(
+        fun(Rev, {IsDel, Sp, Seq}, leaf) ->
+            DocBody = copy_doc_attachments(SrcDb, Rev, Sp, DestFd),
+            {IsDel, DocBody, Seq};
+        (_, _, branch) ->
+            ?REV_MISSING
+        end, Tree).
+            
+
+copy_docs(Db, #db{updater_fd = DestFd} = NewDb, InfoBySeq, Retry) ->
     Ids = [Id || #doc_info{id=Id} <- InfoBySeq],
     LookupResults = couch_btree:lookup(Db#db.fulldocinfo_by_id_btree, Ids),
 
@@ -853,7 +874,7 @@ copy_compact(Db, NewDb0, Retry) ->
 
     % copy misc header values
     if NewDb3#db.security /= Db#db.security ->
-        {ok, Ptr} = couch_file:append_term(NewDb3#db.fd, Db#db.security),
+        {ok, Ptr} = couch_file:append_term(NewDb3#db.updater_fd, Db#db.security),
         NewDb4 = NewDb3#db{security=Db#db.security, security_ptr=Ptr};
     true ->
         NewDb4 = NewDb3
@@ -880,6 +901,7 @@ start_copy_compact(#db{name=Name,filepath=Filepath,header=#db_header{purge_seq=P
         Retry = false,
         ok = couch_file:write_header(Fd, Header=#db_header{})
     end,
+<<<<<<< HEAD
     NewDb = init_db(Name, CompactFile, Fd, Header),
     NewDb2 = if PurgeSeq > 0 ->
         {ok, PurgedIdsRevs} = couch_db:get_last_purged(Db),
@@ -888,6 +910,10 @@ start_copy_compact(#db{name=Name,filepath=Filepath,header=#db_header{purge_seq=P
     true ->
         NewDb
     end,
+=======
+    ReaderFd = open_reader_fd(CompactFile, Db#db.options),
+    NewDb = init_db(Name, CompactFile, Fd, ReaderFd, Header, Db#db.options),
+>>>>>>> Add a dedicated couch_file server to the DB updater process.
     unlink(Fd),
 
     NewDb3 = copy_compact(Db, NewDb2, Retry),
