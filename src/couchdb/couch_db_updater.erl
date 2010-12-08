@@ -504,8 +504,7 @@ merge_rev_trees(Limit, MergeConflicts, [NewDocs|RestDocsList],
     NewRevTree = lists:foldl(
         fun({Client, #doc{revs={Pos,[_Rev|PrevRevs]}}=NewDoc}, AccTree) ->
             if not MergeConflicts ->
-                case couch_key_tree:merge(AccTree, couch_db:doc_to_tree(NewDoc),
-                    Limit) of
+                case couch_key_tree:merge(AccTree, couch_doc:to_path(NewDoc)) of
                 {_NewTree, conflicts} when (not OldDeleted) ->
                     send_result(Client, Id, {Pos-1,PrevRevs}, conflict),
                     AccTree;
@@ -536,7 +535,11 @@ merge_rev_trees(Limit, MergeConflicts, [NewDocs|RestDocsList],
                                 NewDoc#doc{revs={OldPos, [OldRev]}}),
                         NewDoc2 = NewDoc#doc{revs={OldPos + 1, [NewRevId, OldRev]}},
                         {NewTree2, _} = couch_key_tree:merge(AccTree,
+<<<<<<< HEAD
                                 couch_db:doc_to_tree(NewDoc2), Limit),
+=======
+                                couch_doc:to_path(NewDoc2)),
+>>>>>>> Rename doc_to_tree -> to_path and move to couch_doc
                         % we changed the rev id, this tells the caller we did
                         send_result(Client, Id, {Pos-1,PrevRevs},
                                 {ok, {OldPos + 1, NewRevId}}),
@@ -550,7 +553,11 @@ merge_rev_trees(Limit, MergeConflicts, [NewDocs|RestDocsList],
                 end;
             true ->
                 {NewTree, _} = couch_key_tree:merge(AccTree,
+<<<<<<< HEAD
                             couch_db:doc_to_tree(NewDoc), Limit),
+=======
+                            couch_doc:to_path(NewDoc)),
+>>>>>>> Rename doc_to_tree -> to_path and move to couch_doc
                 NewTree
             end
         end,
