@@ -535,11 +535,7 @@ merge_rev_trees(Limit, MergeConflicts, [NewDocs|RestDocsList],
                                 NewDoc#doc{revs={OldPos, [OldRev]}}),
                         NewDoc2 = NewDoc#doc{revs={OldPos + 1, [NewRevId, OldRev]}},
                         {NewTree2, _} = couch_key_tree:merge(AccTree,
-<<<<<<< HEAD
-                                couch_db:doc_to_tree(NewDoc2), Limit),
-=======
                                 couch_doc:to_path(NewDoc2)),
->>>>>>> Rename doc_to_tree -> to_path and move to couch_doc
                         % we changed the rev id, this tells the caller we did
                         send_result(Client, Id, {Pos-1,PrevRevs},
                                 {ok, {OldPos + 1, NewRevId}}),
@@ -553,11 +549,7 @@ merge_rev_trees(Limit, MergeConflicts, [NewDocs|RestDocsList],
                 end;
             true ->
                 {NewTree, _} = couch_key_tree:merge(AccTree,
-<<<<<<< HEAD
-                            couch_db:doc_to_tree(NewDoc), Limit),
-=======
                             couch_doc:to_path(NewDoc)),
->>>>>>> Rename doc_to_tree -> to_path and move to couch_doc
                 NewTree
             end
         end,
@@ -765,16 +757,6 @@ copy_doc_attachments(#db{updater_fd = SrcFd} = SrcDb, SrcSp, DestFd) ->
         end, BinInfos),
     {BodyData, NewBinInfos}.
 
-copy_rev_tree_attachments(SrcDb, DestFd, Tree) ->
-    couch_key_tree:map(
-        fun(_Rev, {IsDel, Sp, Seq}, leaf) ->
-            DocBody = copy_doc_attachments(SrcDb, Sp, DestFd),
-            {IsDel, DocBody, Seq};
-        (_, _, branch) ->
-            ?REV_MISSING
-        end, Tree).
-            
-
 copy_docs(Db, #db{updater_fd = DestFd} = NewDb, InfoBySeq0, Retry) ->
     % COUCHDB-968, make sure we prune duplicates during compaction
     InfoBySeq = lists:usort(fun(#doc_info{id=A}, #doc_info{id=B}) -> A =< B end,
@@ -785,8 +767,8 @@ copy_docs(Db, #db{updater_fd = DestFd} = NewDb, InfoBySeq0, Retry) ->
     NewFullDocInfos1 = lists:map(
         fun({ok, #full_doc_info{rev_tree=RevTree}=Info}) ->
             Info#full_doc_info{rev_tree=couch_key_tree:map(
-                fun(Rev, {IsDel, Sp, Seq}, leaf) ->
-                    DocBody = copy_doc_attachments(Db, Rev, Sp, DestFd),
+                fun(_Rev, {IsDel, Sp, Seq}, leaf) ->
+                    DocBody = copy_doc_attachments(Db, Sp, DestFd),
                     {ok, Pos} = couch_file:append_term_md5(DestFd, DocBody),
                     {IsDel, Pos, Seq};
                 (_, _, branch) ->
@@ -876,19 +858,8 @@ start_copy_compact(#db{name=Name,filepath=Filepath,header=#db_header{purge_seq=P
         Retry = false,
         ok = couch_file:write_header(Fd, Header=#db_header{})
     end,
-<<<<<<< HEAD
-    NewDb = init_db(Name, CompactFile, Fd, Header),
-    NewDb2 = if PurgeSeq > 0 ->
-        {ok, PurgedIdsRevs} = couch_db:get_last_purged(Db),
-        {ok, Pointer} = couch_file:append_term(Fd, PurgedIdsRevs),
-        NewDb#db{header=Header#db_header{purge_seq=PurgeSeq, purged_docs=Pointer}};
-    true ->
-        NewDb
-    end,
-=======
     ReaderFd = open_reader_fd(CompactFile, Db#db.options),
     NewDb = init_db(Name, CompactFile, Fd, ReaderFd, Header, Db#db.options),
->>>>>>> Add a dedicated couch_file server to the DB updater process.
     unlink(Fd),
 
     NewDb3 = copy_compact(Db, NewDb2, Retry),
