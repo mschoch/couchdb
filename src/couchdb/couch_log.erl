@@ -13,16 +13,25 @@
 -module(couch_log).
 -behaviour(gen_event).
 
--export([start_link/0,stop/0]).
--export([debug/2, info/2, error/2]).
--export([debug_on/0,info_on/0,get_level/0,get_level_integer/0, set_level/1]).
--export([init/1, handle_event/2, terminate/2, code_change/3, handle_info/2, handle_call/2]).
+% public API
+-export([start_link/0, stop/0]).
+-export([debug_on/0, info_on/0, get_level/0, get_level_integer/0, set_level/1]).
 -export([read/2]).
+
+% gen_event callbacks
+-export([init/1, handle_event/2, terminate/2, code_change/3]).
+-export([handle_info/2, handle_call/2]).
 
 -define(LEVEL_ERROR, 3).
 -define(LEVEL_INFO, 2).
 -define(LEVEL_DEBUG, 1).
--define(LEVEL_TMI, 0).
+
+-record(state, {
+    fd,
+    level,
+    sasl,
+    eol_re
+}).
 
 debug(Format, Args) ->
     case debug_on() of
@@ -50,13 +59,11 @@ error(Format, Args) ->
 level_integer(error)    -> ?LEVEL_ERROR;
 level_integer(info)     -> ?LEVEL_INFO;
 level_integer(debug)    -> ?LEVEL_DEBUG;
-level_integer(tmi)      -> ?LEVEL_TMI;
 level_integer(_Else)    -> ?LEVEL_ERROR. % anything else default to ERROR level
 
 level_atom(?LEVEL_ERROR) -> error;
 level_atom(?LEVEL_INFO) -> info;
-level_atom(?LEVEL_DEBUG) -> debug;
-level_atom(?LEVEL_TMI) -> tmi.
+level_atom(?LEVEL_DEBUG) -> debug.
 
 
 start_link() ->
@@ -81,7 +88,7 @@ init([]) ->
 
     Filename = couch_config:get("log", "file", "couchdb.log"),
     Level = level_integer(list_to_atom(couch_config:get("log", "level", "info"))),
-    Sasl = list_to_atom(couch_config:get("log", "include_sasl", "true")),
+    Sasl = couch_config:get("log", "include_sasl", "true") =:= "true",
 
     case ets:info(?MODULE) of
     undefined -> ets:new(?MODULE, [named_table]);
@@ -91,7 +98,8 @@ init([]) ->
 
     case file:open(Filename, [append]) of
     {ok, Fd} ->
-        {ok, {Fd, Level, Sasl}};
+        {ok, EolRe} = re:compile("\\r\\n|\\r|\\n"),
+        {ok, #state{fd = Fd, level = Level, sasl = Sasl, eol_re = EolRe}};
     {error, eacces} ->
         {stop, {file_permission_error, Filename}};
     Error ->
@@ -120,6 +128,7 @@ get_level_integer() ->
 set_level_integer(Int) ->
     gen_event:call(error_logger, couch_log, {set_level_integer, Int}).
 
+<<<<<<< HEAD
 handle_event({couch_error, ConMsg, FileMsg}, {Fd, _LogLevel, _Sasl}=State) ->
     log(Fd, ConMsg, FileMsg),
     {ok, State};
@@ -145,13 +154,31 @@ handle_event({_, _, {Pid, _, _}}=Event, {Fd, LogLevel, _Sasl}=State)
 when LogLevel =< ?LEVEL_TMI ->
     % log every remaining event if tmi!
     log(Fd, Pid, tmi, "~p", [Event]),
+=======
+handle_event({Pid, couch_error, {Format, Args}}, State) ->
+    log(State, Pid, error, Format, Args),
+    {ok, State};
+handle_event({Pid, couch_info, {Format, Args}}, #state{level = LogLevel} = St)
+when LogLevel =< ?LEVEL_INFO ->
+    log(St, Pid, info, Format, Args),
+    {ok, St};
+handle_event({Pid, couch_debug, {Format, Args}}, #state{level = LogLevel} = St)
+when LogLevel =< ?LEVEL_DEBUG ->
+    log(St, Pid, debug, Format, Args),
+    {ok, St};
+handle_event({error_report, _, {Pid, _, _}}=Event, #state{sasl = true} = St) ->
+    log(St, Pid, error, "~p", [Event]),
+    {ok, St};
+handle_event({error, _, {Pid, Format, Args}}, #state{sasl = true} = State) ->
+    log(State, Pid, error, Format, Args),
+>>>>>>> Small refactoring of couch_log
     {ok, State};
 handle_event(_Event, State) ->
     {ok, State}.
 
-handle_call({set_level_integer, NewLevel}, {Fd, _LogLevel, Sasl}) ->
+handle_call({set_level_integer, NewLevel}, State) ->
     ets:insert(?MODULE, {level, NewLevel}),
-    {ok, ok, {Fd, NewLevel, Sasl}}.
+    {ok, ok, State#state{level = NewLevel}}.
 
 handle_info(_Info, State) ->
     {ok, State}.
@@ -159,15 +186,15 @@ handle_info(_Info, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Arg, {Fd, _LoggingLevel, _Sasl}) ->
+terminate(_Arg, #state{fd = Fd}) ->
     file:close(Fd).
 
-log(Fd, Pid, Level, Format, Args) ->
+log(#state{fd = Fd, eol_re = EolRe}, Pid, Level, Format, Args) ->
     Msg = io_lib:format(Format, Args),
     ok = io:format("[~s] [~p] ~s~n", [Level, Pid, Msg]), % dump to console too
-    Msg2 = re:replace(lists:flatten(Msg),"\\r\\n|\\r|\\n", "\r\n",
-        [global, {return, list}]),
-    ok = io:format(Fd, "[~s] [~s] [~p] ~s\r~n", [httpd_util:rfc1123_date(), Level, Pid, Msg2]).
+    Msg2 = re:replace(Msg, EolRe, "\r\n", [global]),
+    ok = io:format(Fd, "[~s] [~s] [~p] ~s\r~n",
+        [httpd_util:rfc1123_date(), Level, Pid, Msg2]).
 
 log(Fd, ConsoleMsg, FileMsg) ->
     ok = io:put_chars(ConsoleMsg),
@@ -190,4 +217,5 @@ read(Bytes, Offset) ->
     % TODO: make streaming
 
     {ok, Chunk} = file:pread(Fd, Start, LogFileSize),
+    ok = file:close(Fd),
     Chunk.
