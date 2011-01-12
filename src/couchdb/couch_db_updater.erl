@@ -856,6 +856,13 @@ start_copy_compact(#db{name=Name,filepath=Filepath,header=#db_header{purge_seq=P
     end,
     ReaderFd = open_reader_fd(CompactFile, Db#db.options),
     NewDb = init_db(Name, CompactFile, Fd, ReaderFd, Header, Db#db.options),
+    NewDb2 = if PurgeSeq > 0 ->
+        {ok, PurgedIdsRevs} = couch_db:get_last_purged(Db),
+        {ok, Pointer} = couch_file:append_term(Fd, PurgedIdsRevs),
+        NewDb#db{header=Header#db_header{purge_seq=PurgeSeq, purged_docs=Pointer}};
+    true ->
+        NewDb
+    end,
     unlink(Fd),
 
     NewDb3 = copy_compact(Db, NewDb2, Retry),
