@@ -12,7 +12,7 @@
 
 -module(couch_util).
 
--export([priv_dir/0, start_driver/1, normpath/1]).
+-export([priv_dir/0, normpath/1]).
 -export([should_flush/0, should_flush/1, to_existing_atom/1]).
 -export([rand32/0, implode/2, collate/2, collate/3]).
 -export([abs_pathname/1,abs_pathname/2, trim/1]).
