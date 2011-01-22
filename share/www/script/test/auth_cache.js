@@ -102,6 +102,7 @@ couchTests.auth_cache = function(debug) {
     misses_before = misses();
 
     T(CouchDB.login("fdmanana", "qwerty").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
@@ -112,8 +113,8 @@ couchTests.auth_cache = function(debug) {
     hits_before = hits_after;
     misses_before = misses_after;
 
-    T(CouchDB.logout().ok);
     T(CouchDB.login("fdmanana", "qwerty").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
@@ -124,8 +125,8 @@ couchTests.auth_cache = function(debug) {
     hits_before = hits_after;
     misses_before = misses_after;
 
-    T(CouchDB.logout().ok);
     T(CouchDB.login("chris", "the_god_father").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
@@ -136,8 +137,8 @@ couchTests.auth_cache = function(debug) {
     hits_before = hits_after;
     misses_before = misses_after;
 
-    T(CouchDB.logout().ok);
     T(CouchDB.login("joe", "functional").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
@@ -148,8 +149,8 @@ couchTests.auth_cache = function(debug) {
     hits_before = hits_after;
     misses_before = misses_after;
 
-    T(CouchDB.logout().ok);
     T(CouchDB.login("johndoe", "123456").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
@@ -160,8 +161,8 @@ couchTests.auth_cache = function(debug) {
     hits_before = hits_after;
     misses_before = misses_after;
 
-    T(CouchDB.logout().ok);
     T(CouchDB.login("joe", "functional").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
@@ -173,8 +174,8 @@ couchTests.auth_cache = function(debug) {
     hits_before = hits_after;
     misses_before = misses_after;
 
-    T(CouchDB.logout().ok);
     T(CouchDB.login("fdmanana", "qwerty").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
@@ -191,19 +192,17 @@ couchTests.auth_cache = function(debug) {
     fdmanana.password_sha = new_passwd;
 
     T(authDb.save(fdmanana).ok);
-    T(CouchDB.logout().ok);
 
     // cache was refreshed
     T(CouchDB.login("fdmanana", "qwerty").error === "unauthorized");
     T(CouchDB.login("fdmanana", "foobar").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
 
     T(misses_after === misses_before);
     T(hits_after === (hits_before + 2));
-
-    T(CouchDB.logout().ok);
 
     hits_before = hits_after;
     misses_before = misses_after;
@@ -215,11 +214,11 @@ couchTests.auth_cache = function(debug) {
     fdmanana.password_sha = new_passwd;
 
     T(authDb.save(fdmanana).ok);
-    T(CouchDB.logout().ok);
 
     // cache was refreshed
     T(CouchDB.login("fdmanana", "foobar").error === "unauthorized");
     T(CouchDB.login("fdmanana", "javascript").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
@@ -228,7 +227,6 @@ couchTests.auth_cache = function(debug) {
     T(hits_after === (hits_before + 2));
 
     T(authDb.deleteDoc(fdmanana).ok);
-    T(CouchDB.logout().ok);
 
     hits_before = hits_after;
     misses_before = misses_after;
@@ -247,6 +245,7 @@ couchTests.auth_cache = function(debug) {
     misses_before = misses_after;
 
     T(CouchDB.login("johndoe", "123456").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
@@ -254,7 +253,6 @@ couchTests.auth_cache = function(debug) {
     T(misses_after === (misses_before + 1));
     T(hits_after === hits_before);
 
-    T(CouchDB.logout().ok);
     T(authDb.compact().ok);
 
     while (authDb.info().compact_running);
@@ -263,14 +261,13 @@ couchTests.auth_cache = function(debug) {
     misses_before = misses_after;
 
     T(CouchDB.login("johndoe", "123456").ok);
+    T(CouchDB.logout().ok);
 
     hits_after = hits();
     misses_after = misses();
 
     T(misses_after === misses_before);
     T(hits_after === (hits_before + 1));
-
-    T(CouchDB.logout().ok);
   }
 
 
