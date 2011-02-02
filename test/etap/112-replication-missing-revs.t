@@ -39,6 +39,13 @@
     conn = nil
 }).
 
+config_files() ->
+    lists:map(fun test_util:build_file/1, [
+        "etc/couchdb/default_dev.ini",
+        "etc/couchdb/local_dev.ini",
+        "test/etap/random_port.ini"
+    ]).
+
 main(_) ->
     test_util:init_code_path(),
     
