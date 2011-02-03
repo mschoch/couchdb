@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-#!/bin/sh -e
-=======
 #! /usr/bin/env bash -e
->>>>>>> Use shell scripts to trigger daemon errors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License"); you may not
 # use this file except in compliance with the License. You may obtain a copy of
@@ -18,8 +14,4 @@
 # 
 # Please do not make this file executable as that's the error being tested.
 
-<<<<<<< HEAD
 sleep 5
-=======
-sleep 5
->>>>>>> Use shell scripts to trigger daemon errors.
