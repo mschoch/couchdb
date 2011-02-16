@@ -17,10 +17,20 @@
 -export([code_change/3, terminate/2]).
 
 -include("couch_db.hrl").
+-include("couch_replicator.hrl").
 
 -define(DOC_ID_TO_REP_ID, rep_doc_id_to_rep_id).
 -define(REP_ID_TO_DOC_ID, rep_id_to_rep_doc_id).
 -define(INITIAL_WAIT, 5).
+
+-import(couch_replicator_utils, [
+    parse_rep_doc/2,
+    update_rep_doc/2
+]).
+-import(couch_util, [
+    get_value/2,
+    get_value/3
+]).
 
 -record(state, {
     changes_feed_loop = nil,
@@ -29,11 +39,6 @@
     rep_start_pids = [],
     max_retries
 }).
-
--import(couch_util, [
-    get_value/2,
-    get_value/3
-]).
 
 
 start_link() ->
@@ -77,7 +82,7 @@ handle_call({restart_failure, {Props} = RepDoc, Error}, _From, State) ->
     ?LOG_ERROR("Failed to start replication `~s` after ~p attempts using "
         "the document `~s`. Last error reason was: ~p",
         [pp_rep_id(RepId), MaxRetries, DocId, Error]),
-    couch_rep:update_rep_doc(
+    update_rep_doc(
         RepDoc,
         [{<<"_replication_state">>, <<"error">>},
             {<<"_replication_id">>, ?l2b(BaseId)}]),
@@ -151,7 +156,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 
 changes_feed_loop() ->
-    {ok, RepDb} = couch_rep:ensure_rep_db_exists(),
+    {ok, RepDb} = couch_replicator_utils:ensure_rep_db_exists(),
     Server = self(),
     Pid = spawn_link(
         fun() ->
@@ -264,18 +269,17 @@ rep_user_ctx({RepDoc}) ->
 
 maybe_start_replication(#state{max_retries = MaxRetries} = State,
         DocId, JsonRepDoc) ->
-    UserCtx = rep_user_ctx(JsonRepDoc),
-    {BaseId, _} = RepId = couch_rep:make_replication_id(JsonRepDoc, UserCtx),
+    {ok, #rep{id = {BaseId, _} = RepId} = Rep} =
+        parse_rep_doc(JsonRepDoc, rep_user_ctx(JsonRepDoc)),
     case ets:lookup(?REP_ID_TO_DOC_ID, BaseId) of
     [] ->
         true = ets:insert(?REP_ID_TO_DOC_ID, {BaseId, {DocId, true}}),
         true = ets:insert(?DOC_ID_TO_REP_ID, {DocId, {RepId, MaxRetries}}),
         Server = self(),
-        Pid = spawn_link(fun() ->
-            start_replication(Server, JsonRepDoc, RepId, UserCtx, MaxRetries)
-        end),
+        Pid = spawn_link(
+            fun() -> start_replication(Server, Rep, MaxRetries) end),
         State#state{rep_start_pids = [Pid | State#state.rep_start_pids]};
-    [{BaseId, {DocId, _}}] ->
+    [{BaseId, DocId}] ->
         State;
     [{BaseId, {OtherDocId, false}}] ->
         ?LOG_INFO("The replication specified by the document `~s` was already"
@@ -295,46 +299,37 @@ maybe_tag_rep_doc({Props} = JsonRepDoc, RepId) ->
     RepId ->
         ok;
     _ ->
-        couch_rep:update_rep_doc(JsonRepDoc, [{<<"_replication_id">>, RepId}])
+        update_rep_doc(JsonRepDoc, [{<<"_replication_id">>, RepId}])
     end.
 
 
-start_replication(Server, {RepProps} = RepDoc, RepId, UserCtx, MaxRetries) ->
-    case (catch couch_rep:start_replication(RepDoc, RepId, UserCtx)) of
-    Pid when is_pid(Pid) ->
+start_replication(Server, #rep{id = RepId, doc = {RepProps}} = Rep, MaxRetries) ->
+    case (catch couch_replicator:async_replicate(Rep)) of
+    {ok, _} ->
+        ok = gen_server:call(Server, {triggered, RepId}, infinity),
         ?LOG_INFO("Document `~s` triggered replication `~s`",
-            [get_value(<<"_id">>, RepProps), pp_rep_id(RepId)]),
-        ok = gen_server:call(Server, {triggered, RepId}, infinity),
-        couch_rep:get_result(Pid, RepId, RepDoc, UserCtx);
+            [get_value(<<"_id">>, RepProps), pp_rep_id(RepId)]);
     Error ->
-        couch_rep:update_rep_doc(
-            RepDoc,
-            [{<<"_replication_state">>, <<"error">>},
-                {<<"_replication_id">>, ?l2b(element(1, RepId))}]),
-        keep_retrying(
-            Server, RepId, RepDoc, UserCtx, Error, ?INITIAL_WAIT, MaxRetries)
+        keep_retrying(Server, Rep, Error, ?INITIAL_WAIT, MaxRetries)
     end.
 
 
-keep_retrying(Server, _RepId, RepDoc, _UserCtx, Error, _Wait, 0) ->
-    ok = gen_server:call(Server, {restart_failure, RepDoc, Error}, infinity);
+keep_retrying(Server, Rep, Error, _Wait, 0) ->
+    ok = gen_server:call(Server, {restart_failure, Rep, Error}, infinity);
 
-keep_retrying(Server, RepId, RepDoc, UserCtx, Error, Wait, RetriesLeft) ->
-    {RepProps} = RepDoc,
-    DocId = get_value(<<"_id">>, RepProps),
-    ?LOG_ERROR("Error starting replication `~s` (document `~s`): ~p. "
-        "Retrying in ~p seconds", [pp_rep_id(RepId), DocId, Error, Wait]),
+keep_retrying(Server, #rep{doc = {RepProps}} = Rep, Error, Wait, RetriesLeft) ->
+    ?LOG_ERROR("Error starting replication `~s`: ~p. "
+        "Retrying in ~p seconds", [pp_rep_id(Rep), Error, Wait]),
     ok = timer:sleep(Wait * 1000),
-    case (catch couch_rep:start_replication(RepDoc, RepId, UserCtx)) of
-    Pid when is_pid(Pid) ->
-        ok = gen_server:call(Server, {triggered, RepId}, infinity),
+    case (catch couch_replicator:async_replicate(Rep)) of
+    {ok, _} ->
+        ok = gen_server:call(Server, {triggered, Rep#rep.id}, infinity),
+        DocId = get_value(<<"_id">>, RepProps),
         [{DocId, {RepId, MaxRetries}}] = ets:lookup(?DOC_ID_TO_REP_ID, DocId),
         ?LOG_INFO("Document `~s` triggered replication `~s` after ~p attempts",
-            [DocId, pp_rep_id(RepId), MaxRetries - RetriesLeft + 1]),
-        couch_rep:get_result(Pid, RepId, RepDoc, UserCtx);
+            [DocId, pp_rep_id(RepId), MaxRetries - RetriesLeft + 1]);
     NewError ->
-        keep_retrying(
-            Server, RepId, RepDoc, UserCtx, NewError, Wait * 2, RetriesLeft - 1)
+        keep_retrying(Server, Rep, NewError, Wait * 2, RetriesLeft - 1)
     end.
 
 
@@ -361,7 +356,7 @@ replication_complete(DocId) ->
 stop_replication(DocId) ->
     case ets:lookup(?DOC_ID_TO_REP_ID, DocId) of
     [{DocId, {{BaseId, _} = RepId, _MaxRetries}}] ->
-        couch_rep:end_replication(RepId),
+        couch_replicator:cancel_replication(RepId),
         true = ets:delete(?REP_ID_TO_DOC_ID, BaseId),
         true = ets:delete(?DOC_ID_TO_REP_ID, DocId),
         {ok, RepId};
@@ -374,14 +369,16 @@ stop_all_replications() ->
     ?LOG_INFO("Stopping all ongoing replications because the replicator"
         " database was deleted or changed", []),
     ets:foldl(
-        fun({_, {RepId, _}}, _) ->
-            couch_rep:end_replication(RepId)
-        end,
-        ok, ?DOC_ID_TO_REP_ID),
+        fun({_, {RepId, _}}, _) -> couch_replicator:cancel_replication(RepId) end,
+        ok,
+        ?DOC_ID_TO_REP_ID
+    ),
     true = ets:delete_all_objects(?REP_ID_TO_DOC_ID),
     true = ets:delete_all_objects(?DOC_ID_TO_REP_ID).
 
 
 % pretty-print replication id
+pp_rep_id(#rep{id = RepId}) ->
+    pp_rep_id(RepId);
 pp_rep_id({Base, Extension}) ->
     Base ++ Extension.
