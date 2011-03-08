@@ -369,10 +369,10 @@ stop_all_replications() ->
     ?LOG_INFO("Stopping all ongoing replications because the replicator"
         " database was deleted or changed", []),
     ets:foldl(
-        fun({_, {RepId, _}}, _) -> couch_replicator:cancel_replication(RepId) end,
-        ok,
-        ?DOC_ID_TO_REP_ID
-    ),
+        fun({_, {RepId, _}}, _) ->
+            couch_replicator:cancel_replication(RepId)
+        end,
+        ok, ?DOC_ID_TO_REP_ID),
     true = ets:delete_all_objects(?REP_ID_TO_DOC_ID),
     true = ets:delete_all_objects(?DOC_ID_TO_REP_ID).
 
