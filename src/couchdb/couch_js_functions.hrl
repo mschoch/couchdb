@@ -207,25 +207,21 @@
                         'non-empty string or null.');
                 }
 
-                if (!isAdmin && (user_ctx.name !== userCtx.name)) {
-                    reportError('The given `user_ctx.name\\' is not valid');
-                }
-
                 if (user_ctx.roles && !isArray(user_ctx.roles)) {
                     reportError('The `user_ctx.roles\\' property must be ' +
                         'an array of strings.');
                 }
 
-                if (!isAdmin && user_ctx.roles) {
+                if (user_ctx.roles) {
                     for (var i = 0; i < user_ctx.roles.length; i++) {
                         var role = user_ctx.roles[i];
 
                         if (typeof role !== 'string' || role.length === 0) {
-                            reportError('Roles must be non-empty strings.');
+                            reportError('Roles must be a non-empty strings.');
                         }
-                        if (userCtx.roles.indexOf(role) === -1) {
-                            reportError('Invalid role (`' + role +
-                                '\\') in the `user_ctx\\'');
+                        if (role[0] === '_') {
+                            reportError('System roles (starting with an ' +
+                                'underscore) are not allowed.');
                         }
                     }
                 }
