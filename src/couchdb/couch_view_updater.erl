@@ -257,7 +257,7 @@ view_compute(Group, Docs) ->
 
 
 write_changes(Group, ViewKeyValuesToAdd, DocIdViewIdKeys, NewSeq, InitialBuild) ->
-    #group{id_btree=IdBtree} = Group,
+    #group{id_btree=IdBtree,fd=Fd} = Group,
 
     AddDocIdViewIdKeys = [{DocId, ViewIdKeys} || {DocId, ViewIdKeys} <- DocIdViewIdKeys, ViewIdKeys /= []],
     if InitialBuild ->
@@ -266,7 +266,8 @@ write_changes(Group, ViewKeyValuesToAdd, DocIdViewIdKeys, NewSeq, InitialBuild) 
     true ->
         RemoveDocIds = [DocId || {DocId, ViewIdKeys} <- DocIdViewIdKeys, ViewIdKeys == []],
         LookupDocIds = [DocId || {DocId, _ViewIdKeys} <- DocIdViewIdKeys]
-    end,
+    end,    
+    couch_file:flush(Fd),
     {ok, LookupResults, IdBtree2}
         = couch_btree:query_modify(IdBtree, LookupDocIds, AddDocIdViewIdKeys, RemoveDocIds),
     KeysToRemoveByView = lists:foldl(
@@ -293,6 +294,7 @@ write_changes(Group, ViewKeyValuesToAdd, DocIdViewIdKeys, NewSeq, InitialBuild) 
                     View#view{btree=ViewBtree2}
             end
         end,    Group#group.views, ViewKeyValuesToAdd),
+    couch_file:flush(Fd),
     Group#group{views=Views2, current_seq=NewSeq, id_btree=IdBtree2}.
 
 
