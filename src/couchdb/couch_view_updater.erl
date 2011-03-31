@@ -78,7 +78,8 @@ update(Owner, Group) ->
                 NewGroup#group{current_seq=couch_db:get_update_seq(Db)}})
     end.
 
-purge_index(#group{db=Db, views=Views, id_btree=IdBtree}=Group) ->
+
+purge_index(#group{fd=Fd, db=Db, views=Views, id_btree=IdBtree}=Group) ->
     {ok, PurgedIdsRevs} = couch_db:get_last_purged(Db),
     Ids = [Id || {Id, _Revs} <- PurgedIdsRevs],
     {ok, Lookups, IdBtree2} = couch_btree:query_modify(IdBtree, Ids, [], Ids),
@@ -111,6 +112,7 @@ purge_index(#group{db=Db, views=Views, id_btree=IdBtree}=Group) ->
                 View
             end
         end, Views),
+    ok = couch_file:flush(Fd),
     Group#group{
         id_btree=IdBtree2,
         views=Views2,
@@ -160,6 +162,7 @@ do_maps(Group, MapQueue, WriteQueue, ViewEmptyKVs, GroupSent) ->
         do_maps(Group1, MapQueue, WriteQueue, ViewEmptyKVs, true)
     end.
 
+<<<<<<< HEAD
 % Wait for the mapper process to send us the group with the open
 % query server.
 start_writes(Parent, Owner, WriteQueue, InitialBuild) ->
@@ -170,6 +173,13 @@ do_writes(Parent, Owner, Group, WriteQueue, InitialBuild) ->
     case couch_work_queue:dequeue(WriteQueue) of
     closed ->
         Parent ! {new_group, close_view_server(Group)};
+=======
+do_writes(Parent, Owner, #group{fd=Fd}=Group, WriteQueue, InitialBuild) ->
+    case couch_work_queue:dequeue(WriteQueue) of
+    closed ->
+        ok = couch_file:flush(Fd),
+        Parent ! {new_group, Group};
+>>>>>>> Attempting to fix view indexing problems
     {ok, Queue} ->
         {NewSeq, ViewKeyValues, DocIdViewIdKeys} = lists:foldl(
             fun({Seq, ViewKVs, DocIdViewIdKeys}, nil) ->
@@ -186,6 +196,7 @@ do_writes(Parent, Owner, Group, WriteQueue, InitialBuild) ->
         Group2 = write_changes(Group, ViewKeyValues, DocIdViewIdKeys, NewSeq,
                 InitialBuild),
         case Owner of
+<<<<<<< HEAD
             nil ->
                 ok;
             _ ->
@@ -193,6 +204,12 @@ do_writes(Parent, Owner, Group, WriteQueue, InitialBuild) ->
                 % the group server.
                 Group3 = strip_view_server(Group2),
                 ok = gen_server:cast(Owner, {partial_update, Parent, Group3})
+=======
+        nil -> ok;
+        _ ->
+            ok = couch_file:flush(Fd),
+            ok = gen_server:cast(Owner, {partial_update, Parent, Group2})
+>>>>>>> Attempting to fix view indexing problems
         end,
         do_writes(Parent, Owner, Group2, WriteQueue, InitialBuild)
     end.
