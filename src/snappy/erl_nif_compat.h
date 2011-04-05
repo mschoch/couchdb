@@ -1,5 +1,6 @@
 /* Copyright (c) 2010-2011 Basho Technologies, Inc.
- * With some minor modifications for Apache CouchDB.
+ * With some minor modifications by Filipe David Manana
+ * <fdmanana@apache.org>
  *
  * This file is provided to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file
