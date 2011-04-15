@@ -497,4 +497,7 @@ decompress(<<?TERM_PREFIX, _/binary>> = Bin) ->
 is_compressed(<<?SNAPPY_PREFIX, _/binary>>) ->
     true;
 is_compressed(<<?TERM_PREFIX, _/binary>>) ->
+    true;
+is_compressed(_) ->
     false.
+
