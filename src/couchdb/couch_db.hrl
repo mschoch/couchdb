@@ -95,6 +95,14 @@
     }).
 
 
+-record(doc_update_info,
+    {
+    id,
+    revs,
+    deleted,
+    summary,
+    fd}).
+
 -record(att,
     {
     name,
@@ -167,7 +175,12 @@
     waiting_delayed_commit = nil,
     revs_limit = 1000,
     fsync_options = [],
-    options = []
+    options = [],
+    collect_t=0,
+    notify_t=0,
+    prep_fun_t=0,
+    mod_by_id_t=0,
+    update_by_seq_t=0
     }).
 
 

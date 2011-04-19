@@ -255,7 +255,13 @@ get_db_info(Db) ->
         update_seq=SeqNum,
         name=Name,
         instance_start_time=StartTime,
-        committed_update_seq=CommittedUpdateSeq} = Db,
+        committed_update_seq=CommittedUpdateSeq,
+        collect_t=Collect_t,
+        notify_t=Notify_t,
+        prep_fun_t=Prep_fun_t,
+        mod_by_id_t=Mod_by_id_t,
+        update_by_seq_t=Update_by_seq_t
+        } = Db,
     {ok, Size} = couch_file:bytes(Fd),
     {ok, {Count, DelCount}} = couch_btree:full_reduce(IdBTree),
     InfoList = [
@@ -268,7 +274,12 @@ get_db_info(Db) ->
         {disk_size, Size},
         {instance_start_time, StartTime},
         {disk_format_version, DiskVersion},
-        {committed_update_seq, CommittedUpdateSeq}
+        {committed_update_seq, CommittedUpdateSeq},
+        {collect_t,Collect_t/1000},
+        {notify_t,Notify_t/1000},
+        {prep_fun_t,Prep_fun_t/1000},
+        {mod_by_id_t,Mod_by_id_t/1000},
+        {update_by_seq_t,Update_by_seq_t/1000}
         ],
     {ok, InfoList}.
 
@@ -796,7 +807,7 @@ write_and_commit(#db{update_pid=UpdatePid}=Db, DocBuckets1,
             ],
             % We only retry once
             close(Db2),
-            UpdatePid ! {update_docs, self(), DocBuckets2, NonRepDocs, MergeConflicts, FullCommit},
+            UpdatePid ! {update_docs, self(), prepare_doc_summaries(DocBuckets2), NonRepDocs, MergeConflicts, FullCommit},
             case collect_results(UpdatePid, MRef, []) of
             {ok, Results} -> {ok, Results};
             retry -> throw({update_error, compaction_retry})
@@ -816,8 +827,12 @@ prepare_doc_summaries(BucketList) ->
             [] ->
                 nil
             end,
-            SummaryChunk = couch_db_updater:make_doc_summary(Doc),
-            Doc#doc{body = {summary, SummaryChunk, AttsFd}}
+            #doc_update_info{
+                id=Doc#doc.id,
+                revs=Doc#doc.revs,
+                deleted=Doc#doc.deleted,
+                summary=SummaryChunk,
+                fd=AttsFd}
         end,
         Bucket) || Bucket <- BucketList].
 
