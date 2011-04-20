@@ -697,13 +697,23 @@ update_docs(Db, Docs, Options, interactive_edit) ->
         end, {[], []}, Docs),
         
     DocBuckets = group_alike_docs(Docs2),
+    Optimstic = lists:member(optimistic, Options),
 
     case (Db#db.validate_doc_funs /= []) orelse
         lists:any(
             fun(#doc{id= <<?DESIGN_DOC_PREFIX, _/binary>>}) ->
                 true;
-            (#doc{atts=Atts}) ->
-                Atts /= []
+            (#doc{atts=[]}) ->
+                false;
+            (Doc) ->
+                if Optimstic ->
+                    % if we are optimistically committing, we don't do any
+                    % lookup before we write the attachments or the bodies
+                    %, unless there are stubs, then we have to.
+                    couch_doc:has_stubs(Doc);
+                true ->
+                    true
+                end
             end, Docs2) of
     true ->
         % lookup the doc by id and get the most recent
@@ -786,10 +796,10 @@ collect_results(UpdatePid, MRef, ResultsAcc) ->
         exit(Reason)
     end.
 
-write_and_commit(#db{update_pid=UpdatePid}=Db, DocBuckets1,
+write_and_commit(#db{update_pid=UpdatePid, fd=Fd}=Db, DocBuckets1,
         NonRepDocs, Options0) ->
-    DocBuckets = prepare_doc_summaries(DocBuckets1),
     Options = set_commit_option(Options0),
+    DocBuckets = prepare_doc_summaries(DocBuckets1, Fd, Options),
     MergeConflicts = lists:member(merge_conflicts, Options),
     FullCommit = lists:member(full_commit, Options),
     MRef = erlang:monitor(process, UpdatePid),
@@ -807,7 +817,7 @@ write_and_commit(#db{update_pid=UpdatePid}=Db, DocBuckets1,
             ],
             % We only retry once
             close(Db2),
-            UpdatePid ! {update_docs, self(), prepare_doc_summaries(DocBuckets2), NonRepDocs, MergeConflicts, FullCommit},
+            UpdatePid ! {update_docs, self(), prepare_doc_summaries(DocBuckets2, Fd, Options), NonRepDocs, MergeConflicts, FullCommit},
             case collect_results(UpdatePid, MRef, []) of
             {ok, Results} -> {ok, Results};
             retry -> throw({update_error, compaction_retry})
@@ -818,9 +828,28 @@ write_and_commit(#db{update_pid=UpdatePid}=Db, DocBuckets1,
     end.
 
 
-prepare_doc_summaries(BucketList) ->
+prepare_doc_summaries(BucketList, Fd, Options) ->
+    Optimstic = lists:member(optimistic, Options),
     [lists:map(
-        fun(#doc{atts = Atts} = Doc) ->
+        fun(#doc{atts = Atts, body = Body0} = Doc) ->
+            DiskAtts = [{N, T, P, AL, DL, R, M, E} ||
+                #att{name = N, type = T, data = {_, P}, md5 = M, revpos = R,
+                    att_len = AL, disk_len = DL, encoding = E} <- Atts],
+            Body = case is_binary(Body0) of
+            true ->
+                Body0;
+            false ->
+                couch_util:compress(Body0)
+            end,
+            SummaryBin = ?term_to_bin({Body, couch_util:compress(DiskAtts)}),
+            SummaryChunk = couch_file:assemble_file_chunk(
+                SummaryBin, couch_util:md5(SummaryBin)),
+            if Optimstic ->
+                {ok, Summary} =
+                    couch_file:append_raw_chunk(Fd, SummaryChunk);
+            true ->
+                Summary = SummaryChunk
+            end,
             AttsFd = case Atts of
             [#att{data = {Fd, _}} | _] ->
                 Fd;
@@ -831,7 +860,7 @@ prepare_doc_summaries(BucketList) ->
                 id=Doc#doc.id,
                 revs=Doc#doc.revs,
                 deleted=Doc#doc.deleted,
-                summary=SummaryChunk,
+                summary=Summary,
                 fd=AttsFd}
         end,
         Bucket) || Bucket <- BucketList].

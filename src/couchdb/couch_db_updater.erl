@@ -22,7 +22,6 @@
 
 init({MainPid, DbName, Filepath, Fd, Options}) ->
     process_flag(trap_exit, true),
-    process_flag(priority, high),
     case lists:member(create, Options) of
     true ->
         % create a new header and writes it to the file
@@ -205,6 +204,7 @@ handle_cast({compact_done, CompactFilepath}, #db{filepath=Filepath}=Db) ->
 
 handle_info({update_docs, Client, GroupedDocs, NonRepDocs, MergeConflicts,
         FullCommit}, Db) ->
+    garbage_collect(),
     GroupedDocs2 = [[{Client, D} || D <- DocGroup] || DocGroup <- GroupedDocs],
     if NonRepDocs == [] ->
         {GroupedDocs3, Clients, FullCommit2} = collect_updates(GroupedDocs2,
@@ -572,9 +572,13 @@ modify_full_doc_info(Db, Id, MergeConflicts, OldDocInfo,
                                 " changed. Possibly retrying.", []),
                         throw(retry)
                     end,
-                    {ok, NewSummaryPointer} =
-                        couch_file:append_raw_chunk(Fd, Summary),
-                    {IsDeleted, NewSummaryPointer, NewSeq};
+                    if is_list(Summary) orelse is_binary(Summary) ->
+                        {ok, SummaryPointer} =
+                            couch_file:append_raw_chunk(Fd, Summary);
+                    true ->
+                        SummaryPointer = Summary
+                    end,
+                    {IsDeleted, SummaryPointer, NewSeq};
                 _ ->
                     Value
                 end
