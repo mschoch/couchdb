@@ -75,8 +75,9 @@ open(Filepath, Options) ->
 %%----------------------------------------------------------------------
 %% Purpose: To append an Erlang term to the end of the file.
 %% Args:    Erlang term to serialize and append to the file.
-%% Returns: {ok, Pos} where Pos is the file offset to the beginning the
-%%  serialized  term. Use pread_term to read the term back.
+%% Returns: {ok, Pos, NumBytesWritten} where Pos is the file offset to
+%%  the beginning the serialized  term. Use pread_term to read the term
+%%  back.
 %%  or {error, Reason}.
 %%----------------------------------------------------------------------
 
@@ -89,8 +90,8 @@ append_term_md5(Fd, Term) ->
 %%----------------------------------------------------------------------
 %% Purpose: To append an Erlang binary to the end of the file.
 %% Args:    Erlang term to serialize and append to the file.
-%% Returns: {ok, Pos} where Pos is the file offset to the beginning the
-%%  serialized  term. Use pread_term to read the term back.
+%% Returns: {ok, Pos, NumBytesWritten} where Pos is the file offset to the
+%%  beginning the serialized term. Use pread_term to read the term back.
 %%  or {error, Reason}.
 %%----------------------------------------------------------------------
 
@@ -333,37 +334,55 @@ terminate(_Reason, #file{fd = Fd, writer = Writer}) ->
     receive {'EXIT', Writer, _} -> ok end,
     ok = file:close(Fd).
 
-% TODO remove this clause, it's here only for debugging purposes
-handle_call(get_state, _From, File) ->
-    {reply, File, File};
 
-handle_call(get_fd, _From, #file{fd = Fd} = File) ->
-    {reply, {ok, Fd}, File};
+handle_call({pread_iolist, Pos}, _From, File) ->
+    {RawData, NextPos} = try
+        % up to 8Kbs of read ahead
+        read_raw_iolist_int(File, Pos, 2 * ?SIZE_BLOCK - (Pos rem ?SIZE_BLOCK))
+    catch
+    _:_ ->
+        read_raw_iolist_int(File, Pos, 4)
+    end,
+    <<Prefix:1/integer, Len:31/integer, RestRawData/binary>> =
+        iolist_to_binary(RawData),
+    case Prefix of
+    1 ->
+        {Md5, IoList} = extract_md5(
+            maybe_read_more_iolist(RestRawData, 16 + Len, NextPos, File)),
+        {reply, {ok, IoList, Md5}, File};
+    0 ->
+        IoList = maybe_read_more_iolist(RestRawData, Len, NextPos, File),
+        {reply, {ok, IoList, <<>>}, File}
+    end;
 
-handle_call(bytes, _From, #file{eof = Eof} = File) ->
-    {reply, {ok, Eof}, File};
+handle_call(bytes, _From, #file{fd = Fd} = File) ->
+    {reply, file:position(Fd, eof), File};
 
-handle_call(sync, From, #file{writer = W} = File) ->
-    W ! {sync, From},
-    {noreply, File};
+handle_call(sync, _From, #file{fd=Fd}=File) ->
+    {reply, file:sync(Fd), File};
 
-handle_call({truncate, Pos}, _From, #file{writer = W} = File) ->
-    W ! {truncate, Pos, self()},
-    receive {W, truncated, Pos} -> ok end,
-    {reply, ok, File#file{eof = Pos}};
+handle_call({truncate, Pos}, _From, #file{fd=Fd}=File) ->
+    {ok, Pos} = file:position(Fd, Pos),
+    case file:truncate(Fd) of
+    ok ->
+        {reply, ok, File#file{eof = Pos}};
+    Error ->
+        {reply, Error, File}
+    end;
 
-handle_call({append_bin, Bin}, From, #file{writer = W, eof = Pos} = File) ->
-    gen_server:reply(From, {ok, Pos}),
-    W ! {chunk, Bin},
-    File2 = File#file{
-        eof = Pos + calculate_total_read_len(Pos rem ?SIZE_BLOCK, iolist_size(Bin))
-    },
-    {noreply, File2};
+handle_call({append_bin, Bin}, _From, #file{fd = Fd, eof = Pos} = File) ->
+    Blocks = make_blocks(Pos rem ?SIZE_BLOCK, Bin),
+    Size = iolist_size(Blocks),
+    case file:write(Fd, Blocks) of
+    ok ->
+        {reply, {ok, Pos, Size}, File#file{eof = Pos + Size}};
+    Error ->
+        {reply, Error, File}
+    end;
 
-handle_call({write_header, Bin}, From, #file{writer = W, eof = Pos} = File) ->
-    gen_server:reply(From, ok),
-    W ! {header, Bin},
-    Pos2 = case Pos rem ?SIZE_BLOCK of
+handle_call({write_header, Bin}, _From, #file{fd = Fd, eof = Pos} = File) ->
+    BinSize = byte_size(Bin),
+    case Pos rem ?SIZE_BLOCK of
     0 ->
         Pos + 5;
     BlockOffset ->

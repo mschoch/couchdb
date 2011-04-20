@@ -256,22 +256,21 @@ get_db_info(Db) ->
         name=Name,
         instance_start_time=StartTime,
         committed_update_seq=CommittedUpdateSeq,
-        collect_t=Collect_t,
-        notify_t=Notify_t,
-        prep_fun_t=Prep_fun_t,
-        mod_by_id_t=Mod_by_id_t,
-        update_by_seq_t=Update_by_seq_t
-        } = Db,
+        fulldocinfo_by_id_btree = IdBtree,
+        docinfo_by_seq_btree = SeqBtree
+    } = Db,
     {ok, Size} = couch_file:bytes(Fd),
-    {ok, {Count, DelCount}} = couch_btree:full_reduce(IdBTree),
+    {ok, DbReduction} = couch_btree:full_reduce(by_id_btree(Db)),
     InfoList = [
         {db_name, Name},
-        {doc_count, Count},
-        {doc_del_count, DelCount},
+        {doc_count, element(1, DbReduction)},
+        {doc_del_count, element(2, DbReduction)},
         {update_seq, SeqNum},
         {purge_seq, couch_db:get_purge_seq(Db)},
         {compact_running, Compactor/=nil},
         {disk_size, Size},
+        {data_size, db_data_size(
+            couch_btree:size(SeqBtree), couch_btree:size(IdBtree), DbReduction)},
         {instance_start_time, StartTime},
         {disk_format_version, DiskVersion},
         {committed_update_seq, CommittedUpdateSeq},
@@ -282,6 +281,16 @@ get_db_info(Db) ->
         {update_by_seq_t,Update_by_seq_t/1000}
         ],
     {ok, InfoList}.
+
+db_data_size(nil, _, _) ->
+    null;
+db_data_size(_, nil, _) ->
+    null;
+db_data_size(_, _, {_Count, _DelCount}) ->
+    % pre 1.2 format, upgraded on compaction
+    null;
+db_data_size(SeqBtreeSize, IdBtreeSize, {_Count, _DelCount, DocAndAttsSize}) ->
+    SeqBtreeSize + IdBtreeSize + DocAndAttsSize.
 
 get_design_docs(Db) ->
     {ok,_, Docs} = couch_btree:fold(Db#db.fulldocinfo_by_id_btree,
@@ -524,8 +533,14 @@ prep_and_validate_updates(Db, [DocBucket|RestBuckets],
         [{ok, #full_doc_info{rev_tree=OldRevTree}=OldFullDocInfo}|RestLookups],
         AllowConflict, AccPrepped, AccErrors) ->
     Leafs = couch_key_tree:get_all_leafs(OldRevTree),
-    LeafRevsDict = dict:from_list([{{Start, RevId}, {Deleted, Sp, Revs}} ||
-            {{Deleted, Sp, _Seq}, {Start, [RevId|_]}=Revs} <- Leafs]),
+    LeafRevsDict = dict:from_list([
+        begin
+            Deleted = element(1, LeafVal),
+            Sp = element(2, LeafVal),
+            {{Start, RevId}, {Deleted, Sp, Revs}}
+        end ||
+        {LeafVal, {Start, [RevId | _]} = Revs} <- Leafs
+    ]),
     {PreppedBucket, AccErrors3} = lists:foldl(
         fun(Doc, {Docs2Acc, AccErrors2}) ->
             case prep_and_validate_update(Db, Doc, OldFullDocInfo,
@@ -762,7 +777,9 @@ make_first_doc_on_disk(_Db, _Id, _Pos, []) ->
     nil;
 make_first_doc_on_disk(Db, Id, Pos, [{_Rev, ?REV_MISSING}|RestPath]) ->
     make_first_doc_on_disk(Db, Id, Pos - 1, RestPath);
-make_first_doc_on_disk(Db, Id, Pos, [{_Rev, {IsDel, Sp, _Seq}} |_]=DocPath) ->
+make_first_doc_on_disk(Db, Id, Pos, [{_Rev, RevValue} |_]=DocPath) ->
+    IsDel = element(1, RevValue),
+    Sp = element(2, RevValue),
     Revs = [Rev || {Rev, _} <- DocPath],
     make_doc(Db, Id, IsDel, Sp, {Pos, Revs}).
 
@@ -1000,9 +1017,9 @@ enum_docs_since_reduce_to_count(Reds) ->
             fun couch_db_updater:btree_by_seq_reduce/2, Reds).
 
 enum_docs_reduce_to_count(Reds) ->
-    {Count, _DelCount} = couch_btree:final_reduce(
+    FinalRed = couch_btree:final_reduce(
             fun couch_db_updater:btree_by_id_reduce/2, Reds),
-    Count.
+    element(1, FinalRed).
 
 changes_since(Db, Style, StartSeq, Fun, Acc) ->
     changes_since(Db, Style, StartSeq, Fun, [], Acc).
@@ -1128,7 +1145,9 @@ open_doc_revs_int(Db, IdRevs, Options) ->
                     ?REV_MISSING ->
                         % we have the rev in our list but know nothing about it
                         {{not_found, missing}, {Pos, Rev}};
-                    {IsDeleted, SummaryPtr, _UpdateSeq} ->
+                    RevValue ->
+                        IsDeleted = element(1, RevValue),
+                        SummaryPtr = element(2, RevValue),
                         {ok, make_doc(Db, Id, IsDeleted, SummaryPtr, FoundRevPath)}
                     end
                 end, FoundRevs),
@@ -1178,12 +1197,15 @@ doc_meta_info(#doc_info{high_seq=Seq,revs=[#rev_info{rev=Rev}|RestInfo]}, RevTre
             couch_key_tree:get_full_key_paths(RevTree, [Rev]),
 
         [{revs_info, Pos, lists:map(
-            fun({Rev1, {true, _Sp, _UpdateSeq}}) ->
-                {Rev1, deleted};
-            ({Rev1, {false, _Sp, _UpdateSeq}}) ->
-                {Rev1, available};
-            ({Rev1, ?REV_MISSING}) ->
-                {Rev1, missing}
+            fun({Rev1, ?REV_MISSING}) ->
+                {Rev1, missing};
+            ({Rev1, RevValue}) ->
+                case element(1, RevValue) of
+                true ->
+                    {Rev1, deleted};
+                false ->
+                    {Rev1, available}
+                end
             end, RevPath)}]
     end ++
     case lists:member(conflicts, Options) of
