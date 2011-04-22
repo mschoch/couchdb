@@ -162,7 +162,6 @@ do_maps(Group, MapQueue, WriteQueue, ViewEmptyKVs, GroupSent) ->
         do_maps(Group1, MapQueue, WriteQueue, ViewEmptyKVs, true)
     end.
 
-<<<<<<< HEAD
 % Wait for the mapper process to send us the group with the open
 % query server.
 start_writes(Parent, Owner, WriteQueue, InitialBuild) ->
@@ -173,12 +172,6 @@ do_writes(Parent, Owner, Group, WriteQueue, InitialBuild) ->
     case couch_work_queue:dequeue(WriteQueue) of
     closed ->
         Parent ! {new_group, close_view_server(Group)};
-=======
-do_writes(Parent, Owner, #group{fd=Fd}=Group, WriteQueue, InitialBuild) ->
-    case couch_work_queue:dequeue(WriteQueue) of
-    closed ->
-        Parent ! {new_group, Group};
->>>>>>> Attempting to fix view indexing problems
     {ok, Queue} ->
         {NewSeq, ViewKeyValues, DocIdViewIdKeys} = lists:foldl(
             fun({Seq, ViewKVs, DocIdViewIdKeys}, nil) ->
@@ -195,7 +188,6 @@ do_writes(Parent, Owner, #group{fd=Fd}=Group, WriteQueue, InitialBuild) ->
         Group2 = write_changes(Group, ViewKeyValues, DocIdViewIdKeys, NewSeq,
                 InitialBuild),
         case Owner of
-<<<<<<< HEAD
             nil ->
                 ok;
             _ ->
@@ -203,11 +195,6 @@ do_writes(Parent, Owner, #group{fd=Fd}=Group, WriteQueue, InitialBuild) ->
                 % the group server.
                 Group3 = strip_view_server(Group2),
                 ok = gen_server:cast(Owner, {partial_update, Parent, Group3})
-=======
-        nil -> ok;
-        _ ->
-            ok = gen_server:cast(Owner, {partial_update, Parent, Group2})
->>>>>>> Attempting to fix view indexing problems
         end,
         do_writes(Parent, Owner, Group2, WriteQueue, InitialBuild)
     end.
