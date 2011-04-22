@@ -449,11 +449,11 @@ read_raw_iolist_int(MainFd, ReadFd, {Pos, _Size}, Len) -> % 0110 UPGRADE CODE
 read_raw_iolist_int(MainFd, ReadFd, Pos, Len) ->
     BlockOffset = Pos rem ?SIZE_BLOCK,
     TotalBytes = calculate_total_read_len(BlockOffset, Len),
-    
+    Start = erlang:now(),
     case file:pread(ReadFd, Pos, TotalBytes) of
     {ok, <<RawBin:TotalBytes/binary>>} -> ok;
     _ ->
-        io:format("read_raw_iolist_int fault!~n"),
+        ?LOG_DEBUG("read_raw_iolist_int fault!", []),
         flush(MainFd),
         {ok, <<RawBin:TotalBytes/binary>>} =
                 file:pread(ReadFd, Pos, TotalBytes)
@@ -590,6 +590,7 @@ writer_collect_chunks(Fd, Eof, Acc) ->
         Eof2 = write_blocks(Fd, Eof, Acc),
         writer_loop(Fd, Eof2)
     end.
+
 
 write_blocks(Fd, Eof, Data) ->
     Blocks = make_blocks(Eof rem ?SIZE_BLOCK, lists:reverse(Data)),
