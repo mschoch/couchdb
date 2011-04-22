@@ -177,7 +177,6 @@ do_writes(Parent, Owner, Group, WriteQueue, InitialBuild) ->
 do_writes(Parent, Owner, #group{fd=Fd}=Group, WriteQueue, InitialBuild) ->
     case couch_work_queue:dequeue(WriteQueue) of
     closed ->
-        ok = couch_file:flush(Fd),
         Parent ! {new_group, Group};
 >>>>>>> Attempting to fix view indexing problems
     {ok, Queue} ->
@@ -207,7 +206,6 @@ do_writes(Parent, Owner, #group{fd=Fd}=Group, WriteQueue, InitialBuild) ->
 =======
         nil -> ok;
         _ ->
-            ok = couch_file:flush(Fd),
             ok = gen_server:cast(Owner, {partial_update, Parent, Group2})
 >>>>>>> Attempting to fix view indexing problems
         end,
@@ -267,7 +265,6 @@ write_changes(Group, ViewKeyValuesToAdd, DocIdViewIdKeys, NewSeq, InitialBuild) 
         RemoveDocIds = [DocId || {DocId, ViewIdKeys} <- DocIdViewIdKeys, ViewIdKeys == []],
         LookupDocIds = [DocId || {DocId, _ViewIdKeys} <- DocIdViewIdKeys]
     end,
-    couch_file:flush(Fd),
     {ok, LookupResults, IdBtree2}
         = couch_btree:query_modify(IdBtree, LookupDocIds, AddDocIdViewIdKeys, RemoveDocIds),
     KeysToRemoveByView = lists:foldl(
