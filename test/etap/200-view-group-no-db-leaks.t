@@ -19,7 +19,7 @@
     handler
 }).
 
--define(LATEST_DISK_VERSION, 5).
+-define(LATEST_DISK_VERSION, 6).
 
 -record(db_header,
     {disk_version = ?LATEST_DISK_VERSION,
@@ -40,6 +40,7 @@
     compactor_pid = nil,
     instance_start_time, % number of microsecs since jan 1 1970 as a binary string
     fd,
+    updater_fd,
     fd_ref_counter,
     header = #db_header{},
     committed_update_seq,
@@ -56,7 +57,8 @@
     waiting_delayed_commit = nil,
     revs_limit = 1000,
     fsync_options = [],
-    is_sys_db = false
+    is_sys_db = false,
+    options = []
 }).
 
 test_db_name() -> <<"couch_test_view_group_db_leaks">>.
@@ -139,7 +141,9 @@ admin_user_ctx() ->
     {user_ctx, #user_ctx{roles=[<<"_admin">>]}}.
 
 create_db() ->
-    {ok, Db} = couch_db:create(test_db_name(), [admin_user_ctx()]),
+    {ok, #db{main_pid = Pid} = Db} = couch_db:create(
+        test_db_name(), [admin_user_ctx()]),
+    put(db_main_pid, Pid),
     ok = couch_db:close(Db).
 
 delete_db() ->
@@ -152,7 +156,7 @@ compact_db() ->
     wait_db_compact_done(10).
 
 wait_db_compact_done(0) ->
-    etap:bail("DB compaction failed to finish.");
+    etap:is(true, false, "DB compaction didn't finish");
 wait_db_compact_done(N) ->
     {ok, Db} = couch_db:open_int(test_db_name(), []),
     ok = couch_db:close(Db),
@@ -169,18 +173,15 @@ compact_view_group() ->
     wait_view_compact_done(10).
 
 wait_view_compact_done(0) ->
-    etap:bail("View group compaction failed to finish.");
+    etap:is(true, false, "view group compaction didn't finish");
 wait_view_compact_done(N) ->
     {ok, {{_, Code, _}, _Headers, Body}} = http:request(
         get,
         {db_url() ++ "/_design/" ++ binary_to_list(ddoc_name()) ++ "/_info", []},
         [],
         [{sync, true}]),
-    case Code of
-        200 -> ok;
-        _ -> etap:bail("Invalid view group info.")
-    end,
-    {Info} = couch_util:json_decode(Body),
+    etap:is(Code, 200, "got view group info"),
+    {Info} = ejson:decode(Body),
     {IndexInfo} = couch_util:get_value(<<"view_index">>, Info),
     CompactRunning = couch_util:get_value(<<"compact_running">>, IndexInfo),
     case CompactRunning of

@@ -352,11 +352,7 @@ handle_info({'EXIT', Updater, {timeout, _}}, #group_state{updater_pid=Updater, g
 
 handle_info({'EXIT', FromPid, Reason}, State) ->
     ?LOG_DEBUG("Exit from linked pid: ~p", [{FromPid, Reason}]),
-    {stop, Reason, State};
-
-handle_info({'DOWN',_,_,_,_}, State) ->
-    ?LOG_INFO("Shutting down view group server, monitored db is closing.", []),
-    {stop, normal, reply_all(State, shutdown)}.
+    {stop, Reason, State}.
 
 
 terminate(Reason, #group_state{updater_pid=Update, compactor_pid=Compact}=S) ->
