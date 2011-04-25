@@ -40,7 +40,6 @@
     compactor_pid = nil,
     instance_start_time, % number of microsecs since jan 1 1970 as a binary string
     fd,
-    updater_fd,
     fd_ref_counter,
     header = #db_header{},
     committed_update_seq,
@@ -58,7 +57,12 @@
     revs_limit = 1000,
     fsync_options = [],
     is_sys_db = false,
-    options = []
+    options = [],
+    collect_t=0,
+    notify_t=0,
+    prep_fun_t=0,
+    mod_by_id_t=0,
+    update_by_seq_t=0
 }).
 
 test_db_name() -> <<"couch_test_view_group_db_leaks">>.
