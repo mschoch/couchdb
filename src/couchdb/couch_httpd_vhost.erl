@@ -242,7 +242,9 @@ make_vhosts() ->
     Vhosts = lists:foldl(fun({Vhost, Path}, Acc) ->
                     [{parse_vhost(Vhost), split_path(Path)}|Acc]
             end, [], couch_config:get("vhosts")),
+
     lists:reverse(lists:usort(Vhosts)).
+
 
 parse_vhost(Vhost) ->
     case urlsplit_netloc(Vhost, []) of

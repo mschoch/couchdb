@@ -222,7 +222,11 @@ test_vhost_request_wildcard()->
 test_vhost_request_replace_var() ->
     case ibrowse:send_req(server(), [], get, [], [{host_header,"etap-test-db.example1.com"}]) of
         {ok, _, _, Body} ->
+<<<<<<< HEAD
             {JsonBody} = couch_util:json_decode(Body),
+=======
+            {JsonBody} = ejson:decode(Body),
+>>>>>>> Fix vhosts for https and fix vhost dependence on sorting of
             HasDbNameInfo = proplists:is_defined(<<"db_name">>, JsonBody),
             etap:is(HasDbNameInfo, true, "should return database info");
         _Else -> etap:is(false, true, <<"ibrowse fail">>)
@@ -242,7 +246,11 @@ test_vhost_request_replace_var1() ->
 test_vhost_request_replace_wildcard() ->
     case ibrowse:send_req(server(), [], get, [], [{host_header,"etap-test-db.example2.com"}]) of
         {ok, _, _, Body} ->
+<<<<<<< HEAD
             {JsonBody} = couch_util:json_decode(Body),
+=======
+            {JsonBody} = ejson:decode(Body),
+>>>>>>> Fix vhosts for https and fix vhost dependence on sorting of
             HasDbNameInfo = proplists:is_defined(<<"db_name">>, JsonBody),
             etap:is(HasDbNameInfo, true, "should return database info");
         _Else -> etap:is(false, true, <<"ibrowse fail">>)
@@ -252,7 +260,11 @@ test_vhost_request_path() ->
     Uri = server() ++ "test",
     case ibrowse:send_req(Uri, [], get, [], [{host_header, "example.com"}]) of
         {ok, _, _, Body} ->
+<<<<<<< HEAD
             {JsonBody} = couch_util:json_decode(Body),
+=======
+            {JsonBody} = ejson:decode(Body),
+>>>>>>> Fix vhosts for https and fix vhost dependence on sorting of
             HasDbNameInfo = proplists:is_defined(<<"db_name">>, JsonBody),
             etap:is(HasDbNameInfo, true, "should return database info");
         _Else -> etap:is(false, true, <<"ibrowse fail">>)
@@ -272,7 +284,11 @@ test_vhost_request_path2() ->
     Uri = server() ++ "test",
     case ibrowse:send_req(Uri, [], get, [], [{host_header,"etap-test-db.example2.com"}]) of
         {ok, _, _, Body} ->
+<<<<<<< HEAD
             {JsonBody} = couch_util:json_decode(Body),
+=======
+            {JsonBody} = ejson:decode(Body),
+>>>>>>> Fix vhosts for https and fix vhost dependence on sorting of
             HasDbNameInfo = proplists:is_defined(<<"db_name">>, JsonBody),
             etap:is(HasDbNameInfo, true, "should return database info");
         _Else -> etap:is(false, true, <<"ibrowse fail">>)
