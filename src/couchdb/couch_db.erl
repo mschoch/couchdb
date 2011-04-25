@@ -860,37 +860,18 @@ write_and_commit(#db{update_pid=UpdatePid, fd=Fd}=Db, DocBuckets1,
 prepare_doc_summaries(BucketList, Fd, Options) ->
     Optimstic = lists:member(optimistic, Options),
     [lists:map(
-        fun(#doc{atts = Atts, body = Body0} = Doc) ->
+        fun(#doc{body = Body, atts = Atts} = Doc) ->
             DiskAtts = [{N, T, P, AL, DL, R, M, E} ||
                 #att{name = N, type = T, data = {_, P}, md5 = M, revpos = R,
                     att_len = AL, disk_len = DL, encoding = E} <- Atts],
-            Body = case is_binary(Body0) of
-            true ->
-                Body0;
-            false ->
-                couch_util:compress(Body0)
-            end,
-            SummaryBin = ?term_to_bin({Body, couch_util:compress(DiskAtts)}),
-            SummaryChunk = couch_file:assemble_file_chunk(
-                SummaryBin, couch_util:md5(SummaryBin)),
-            if Optimstic ->
-                {ok, Summary} =
-                    couch_file:append_raw_chunk(Fd, SummaryChunk);
-            true ->
-                Summary = SummaryChunk
-            end,
             AttsFd = case Atts of
             [#att{data = {Fd, _}} | _] ->
                 Fd;
             [] ->
                 nil
             end,
-            #doc_update_info{
-                id=Doc#doc.id,
-                revs=Doc#doc.revs,
-                deleted=Doc#doc.deleted,
-                summary=Summary,
-                fd=AttsFd}
+            SummaryChunk = couch_db_updater:make_doc_summary({Body, DiskAtts}),
+            Doc#doc{body = {summary, SummaryChunk, AttsFd}}
         end,
         Bucket) || Bucket <- BucketList].
 
