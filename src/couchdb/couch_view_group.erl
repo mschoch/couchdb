@@ -626,7 +626,13 @@ init_group(Db, Fd, #group{def_lang=Lang,views=Views}=
             Group, IndexHeader) ->
      #index_header{seq=Seq, purge_seq=PurgeSeq,
             id_btree_state=IdBtreeState, view_states=ViewStates} = IndexHeader,
-    {ok, IdBtree} = couch_btree:open(IdBtreeState, Fd),
+    StateUpdate = fun
+        ({_, _, _}=State) -> State;
+        (State) -> {State, 0, 0}
+    end,
+    ViewStates2 = lists:map(StateUpdate, ViewStates),
+    {ok, IdBtree} = couch_btree:open(
+        IdBtreeState, Fd, [{append_term_options, Db#db.append_term_options}]),
     Views2 = lists:zipwith(
         fun(BtreeState, #view{id_num=ViewId,reduce_funs=RedFuns,options=Options}=View) ->
             FunSrcs = [FunSrc || {_Name, FunSrc} <- RedFuns],
@@ -649,8 +655,9 @@ init_group(Db, Fd, #group{def_lang=Lang,views=Views}=
             <<"raw">> ->
                 Less = fun(A,B) -> A < B end
             end,
-            {ok, Btree} = couch_btree:open(BtreeState, Fd,
-                    [{less, Less}, {reduce, ReduceFun}]
+            {ok, Btree} = couch_btree:open(BTState, Fd,
+                    [{less, Less}, {reduce, ReduceFun},
+                    {append_term_options, Db#db.append_term_options}]
             ),
             View#view{btree=Btree, update_seq=Seq, purge_seq=PurgeSeq}
         end,

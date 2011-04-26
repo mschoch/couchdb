@@ -870,7 +870,7 @@ prepare_doc_summaries(BucketList, Fd, Options) ->
             [] ->
                 nil
             end,
-            SummaryChunk = couch_db_updater:make_doc_summary({Body, DiskAtts}),
+            SummaryChunk = couch_db_updater:make_doc_summary(Db, {Body, DiskAtts}),
             Doc#doc{body = {summary, SummaryChunk, AttsFd}}
         end,
         Bucket) || Bucket <- BucketList].

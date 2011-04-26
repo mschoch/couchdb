@@ -181,7 +181,8 @@
     notify_t=0,
     prep_fun_t=0,
     mod_by_id_t=0,
-    update_by_seq_t=0
+    update_by_seq_t=0,
+    append_term_options = []
     }).
 
 
@@ -287,5 +288,6 @@
     extract_kv = fun({_Key, _Value} = KV) -> KV end,
     assemble_kv = fun(Key, Value) -> {Key, Value} end,
     less = fun(A, B) -> A < B end,
-    reduce = nil
+    reduce = nil,
+    append_term_options = []
 }).
