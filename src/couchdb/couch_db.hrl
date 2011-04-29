@@ -13,6 +13,7 @@
 -define(LOCAL_DOC_PREFIX, "_local/").
 -define(DESIGN_DOC_PREFIX0, "_design").
 -define(DESIGN_DOC_PREFIX, "_design/").
+-define(DEFAULT_COMPRESSION, snappy).
 
 -define(MIN_STR, <<"">>).
 -define(MAX_STR, <<255>>). % illegal utf string
@@ -182,7 +183,8 @@
     prep_fun_t=0,
     mod_by_id_t=0,
     update_by_seq_t=0,
-    append_term_options = []
+    append_term_options = [],
+    compression
     }).
 
 
@@ -289,5 +291,5 @@
     assemble_kv = fun(Key, Value) -> {Key, Value} end,
     less = fun(A, B) -> A < B end,
     reduce = nil,
-    append_term_options = []
+    compression = ?DEFAULT_COMPRESSION
 }).
