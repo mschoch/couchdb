@@ -287,7 +287,7 @@ init({Filepath, Options, ReturnPid, Ref}) ->
        Error ->
            throw({error, Error})
        end,
-       Writer = spawn_writer(Filepath, Options),
+       Writer = spawn_writer(Filepath),
        {ok, Eof} = file:position(ReadFd, eof),
        maybe_track_open_os_files(Options),
        {ok, #file{fd = ReadFd, writer = Writer, eof = Eof}}
@@ -335,33 +335,14 @@ maybe_track_open_os_files(FileOptions) ->
         couch_stats_collector:track_process_count({couchdb, open_os_files})
     end.
 
-terminate(_Reason, #file{fd = Fd, writer = nil}) ->
-    ok = file:close(Fd);
 terminate(_Reason, #file{fd = Fd, writer = Writer}) ->
     exit(Writer, kill),
     receive {'EXIT', Writer, _} -> ok end,
     ok = file:close(Fd).
 
 
-handle_call({pread_iolist, Pos}, _From, File) ->
-    {RawData, NextPos} = try
-        % up to 8Kbs of read ahead
-        read_raw_iolist_int(File, Pos, 2 * ?SIZE_BLOCK - (Pos rem ?SIZE_BLOCK))
-    catch
-    _:_ ->
-        read_raw_iolist_int(File, Pos, 4)
-    end,
-    <<Prefix:1/integer, Len:31/integer, RestRawData/binary>> =
-        iolist_to_binary(RawData),
-    case Prefix of
-    1 ->
-        {Md5, IoList} = extract_md5(
-            maybe_read_more_iolist(RestRawData, 16 + Len, NextPos, File)),
-        {reply, {ok, IoList, Md5}, File};
-    0 ->
-        IoList = maybe_read_more_iolist(RestRawData, Len, NextPos, File),
-        {reply, {ok, IoList, <<>>}, File}
-    end;
+handle_call(get_fd, _From, #file{fd = Fd} = File) ->
+    {reply, {ok, Fd}, File};
 
 handle_call(bytes, _From, #file{fd = Fd} = File) ->
     {reply, file:position(Fd, eof), File};
@@ -401,8 +382,6 @@ handle_call({write_header, Bin}, _From, #file{fd = Fd, eof = Pos} = File) ->
     },
     {noreply, File2};
 
-handle_call(flush, _From, #file{writer =  nil} = File) ->
-    {reply, ok, File};
 handle_call(flush, From, #file{writer =  W} = File) ->
     W ! {flush, From},
     {noreply, File};
@@ -419,7 +398,7 @@ code_change(_OldVsn, State, _Extra) ->
 handle_info({'EXIT', _, normal}, Fd) ->
     {noreply, Fd};
 handle_info({'EXIT', W, Reason}, #file{writer = W} = Fd) ->
-    {stop, Reason, Fd#file{writer=nil}};
+    {stop, {write_loop_died, Reason}, Fd};
 handle_info({'EXIT', _, Reason}, Fd) ->
     {stop, Reason, Fd}.
 
@@ -536,17 +515,12 @@ split_iolist([Byte | Rest], SplitAt, BeginAcc) when is_integer(Byte) ->
     split_iolist(Rest, SplitAt - 1, [Byte | BeginAcc]).
 
 
-spawn_writer(Filepath, Options) ->
-    case lists:member(read_only, Options) of
-    true ->
-        nil;
-    false ->
-        spawn_link(fun() ->
-            {ok, Fd} = file:open(Filepath, [binary, append, raw]),
-            {ok, Eof} = file:position(Fd, eof),
-            writer_loop(Fd, Eof)
-        end)
-    end.
+spawn_writer(Filepath) ->
+    spawn_link(fun() ->
+        {ok, Fd} = file:open(Filepath, [binary, append, raw]),
+        {ok, Eof} = file:position(Fd, eof),
+        writer_loop(Fd, Eof)
+    end).
 
 writer_loop(Fd, Eof) ->
     receive
