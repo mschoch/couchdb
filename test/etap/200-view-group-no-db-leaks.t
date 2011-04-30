@@ -64,7 +64,7 @@
     mod_by_id_t=0,
     update_by_seq_t=0,
     options = [],
-    term_append_options = []
+    compression
 }).
 
 test_db_name() -> <<"couch_test_view_group_db_leaks">>.
