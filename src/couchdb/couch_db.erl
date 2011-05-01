@@ -730,7 +730,7 @@ update_docs(Db, Docs, Options, interactive_edit) ->
         end, {[], []}, Docs),
         
     DocBuckets = group_alike_docs(Docs2),
-    Optimstic = lists:member(optimistic, Options),
+    Optimistic = lists:member(optimistic, Options),
 
     case (Db#db.validate_doc_funs /= []) orelse
         lists:any(
@@ -739,7 +739,7 @@ update_docs(Db, Docs, Options, interactive_edit) ->
             (#doc{atts=[]}) ->
                 false;
             (Doc) ->
-                if Optimstic ->
+                if Optimistic ->
                     % if we are optimistically committing, we don't do any
                     % lookup before we write the attachments or the bodies
                     %, unless there are stubs, then we have to.
