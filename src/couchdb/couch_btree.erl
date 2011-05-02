@@ -40,7 +40,7 @@ set_options(Bt, [{join, Assemble}|Rest]) ->
     set_options(Bt#btree{assemble_kv=Assemble}, Rest);
 set_options(Bt, [{less, Less}|Rest]) ->
     set_options(Bt#btree{less=Less}, Rest);
-set_options(Bt, [{reduce, Reduce}|Rest]) when is_function(Reduce, 2) ->
+set_options(Bt, [{reduce, Reduce}|Rest]) ->
     set_options(Bt#btree{reduce=Reduce}, Rest);
 set_options(Bt, [{compression, Comp}|Rest]) ->
     set_options(Bt#btree{compression=Comp}, Rest).

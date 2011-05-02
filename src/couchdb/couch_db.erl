@@ -829,8 +829,9 @@ collect_results(UpdatePid, MRef, ResultsAcc) ->
         exit(Reason)
     end.
 
-write_and_commit(#db{update_pid=UpdatePid, fd=Fd}=Db, DocBuckets1,
+write_and_commit(#db{update_pid=UpdatePid}=Db, DocBuckets1,
         NonRepDocs, Options0) ->
+    DocBuckets = prepare_doc_summaries(Db, DocBuckets1),
     Options = set_commit_option(Options0),
     DocBuckets = prepare_doc_summaries(DocBuckets1, Fd, Options),
     MergeConflicts = lists:member(merge_conflicts, Options),
@@ -845,7 +846,7 @@ write_and_commit(#db{update_pid=UpdatePid, fd=Fd}=Db, DocBuckets1,
             % compaction. Retry by reopening the db and writing to the current file
             {ok, Db2} = open_ref_counted(Db#db.main_pid, self()),
             DocBuckets2 = [
-                [doc_flush_atts(Doc, Db2#db.fd) || Doc <- Bucket] ||
+                [doc_flush_atts(Doc, Db2#db.updater_fd) || Doc <- Bucket] ||
                 Bucket <- DocBuckets1
             ],
             % We only retry once
@@ -862,8 +863,7 @@ write_and_commit(#db{update_pid=UpdatePid, fd=Fd}=Db, DocBuckets1,
     end.
 
 
-prepare_doc_summaries(BucketList, Fd, Options) ->
-    Optimstic = lists:member(optimistic, Options),
+prepare_doc_summaries(Db, BucketList) ->
     [lists:map(
         fun(#doc{body = Body, atts = Atts} = Doc) ->
             DiskAtts = [{N, T, P, AL, DL, R, M, E} ||
@@ -1160,7 +1160,7 @@ open_doc_revs_int(Db, IdRevs, Options) ->
         IdRevs, LookupResults).
 
 open_doc_int(Db, <<?LOCAL_DOC_PREFIX, _/binary>> = Id, Options) ->
-    case couch_btree:lookup(Db#db.local_docs_btree, [Id]) of
+    case couch_btree:lookup(local_btree(Db), [Id]) of
     [{ok, {_, {Rev, BodyData}}}] ->
         Doc = #doc{id=Id, revs={0, [?l2b(integer_to_list(Rev))]}, body=BodyData},
         apply_open_options({ok, Doc}, Options);

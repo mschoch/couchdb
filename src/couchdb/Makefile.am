@@ -38,6 +38,7 @@ source_files = \
     couch_btree.erl \
     couch_changes.erl \
     couch_compress_types.erl \
+    couch_compress.erl \
     couch_config.erl \
     couch_config_writer.erl \
     couch_db.erl \
@@ -115,6 +116,7 @@ compiled_files = \
     couch_btree.beam \
     couch_changes.beam \
     couch_compress_types.beam \
+    couch_compress.beam \
     couch_config.beam \
     couch_config_writer.beam \
     couch_db.beam \

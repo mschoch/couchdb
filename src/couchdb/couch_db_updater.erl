@@ -506,31 +506,30 @@ flush_trees(#db{updater_fd = Fd} = Db,
     {Flushed, LeafsSize} = couch_key_tree:mapfold(
         fun(_Rev, Value, Type, Acc) ->
             case Value of
-            #doc{atts=Atts,deleted=IsDeleted}=Doc ->
+            #doc{deleted = IsDeleted, body = {summary, Summary, AttsFd}} ->
                 % this node value is actually an unwritten document summary,
                 % write to disk.
                 % make sure the Fd in the written bins is the same Fd we are
                 % and convert bins, removing the FD.
                 % All bins should have been written to disk already.
-                DiskAtts =
-                case Atts of
-                [] -> [];
-                [#att{data={BinFd, _Sp}} | _ ] when BinFd == Fd ->
-                    [{N,T,P,AL,DL,R,M,E}
-                        || #att{name=N,type=T,data={_,P},md5=M,revpos=R,
-                               att_len=AL,disk_len=DL,encoding=E}
-                        <- Atts];
+                case {AttsFd, Fd} of
+                {nil, _} ->
+                    ok;
+                {SameFd, SameFd} ->
+                    ok;
                 _ ->
-                    % BinFd must not equal our Fd. This can happen when a database
-                    % is being switched out during a compaction
+                    % Fd where the attachments were written to is not the same
+                    % as our Fd. This can happen when a database is being
+                    % switched out during a compaction.
                     ?LOG_DEBUG("File where the attachments are written has"
                             " changed. Possibly retrying.", []),
                     throw(retry)
                 end,
                 {ok, NewSummaryPointer, SummarySize} =
-                    couch_file:append_term_md5(Fd, {Doc#doc.body, DiskAtts}),
+                    couch_file:append_raw_chunk(Fd, Summary),
                 TotalSize = lists:foldl(
-                    fun(#att{att_len = L}, A) -> A + L end, SummarySize, Atts),
+                    fun(#att{att_len = L}, A) -> A + L end,
+                    SummarySize, Value#doc.atts),
                 NewValue = {IsDeleted, NewSummaryPointer, UpdateSeq, TotalSize},
                 case Type of
                 leaf ->
