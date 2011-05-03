@@ -104,6 +104,9 @@ SnappyNifSink::getBin()
 }
 
 
+BEGIN_C
+
+
 static inline ERL_NIF_TERM
 make_atom(ErlNifEnv* env, const char* name)
 {
