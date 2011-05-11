@@ -88,7 +88,7 @@ var Couch = {
               ddoc._module_cache[newModule.id] = newModule.exports;
             }
             return ddoc._module_cache[newModule.id];
-          }
+          };
           sandbox.require = require;
         }
         var functionObject = evalcx(source, sandbox);
