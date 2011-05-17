@@ -334,7 +334,12 @@ strip_view_server(#group{views=Views}=Group) ->
             btree=Btree,
             native_red_fun=RedFun
         } = View,
-        Btree2 = couch_btree:set_options(Btree, [{reduce, RedFun}]),
+        Btree2 = case RedFun of 
+            undefined ->
+                Btree;
+            RedFun ->
+                couch_btree:set_options(Btree, [{reduce, RedFun}])
+        end,
         View#view{btree=Btree2}
     end, Views),
     Group#group{view_server=nil, views=Views2}.
