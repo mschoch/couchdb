@@ -39,9 +39,9 @@ update(Owner, Group) ->
         exit(reset)
     end,
     {ok, MapQueue} = couch_work_queue:new(
-        [{max_size, 100000}, {max_items, 500}]),
+        [{max_size, 10000}, {max_items, 500}]),
     {ok, WriteQueue} = couch_work_queue:new(
-        [{max_size, 100000}, {max_items, 500}]),
+        [{max_size, 10000}, {max_items, 500}]),
     Self = self(),
     ViewEmptyKVs = [{View, []} || View <- Group2#group.views],
     spawn_link(fun() -> do_maps(Group2, MapQueue, WriteQueue, ViewEmptyKVs, false) end),
