@@ -48,7 +48,7 @@ request_group(Pid, Seq) ->
     end.
 
 request_group_info(Pid) ->
-    case gen_server:call(Pid, request_group_info) of
+    case gen_server:call(Pid, request_group_info, infinity) of
     {ok, GroupInfoList} ->
         {ok, GroupInfoList};
     Error ->
@@ -329,6 +329,18 @@ handle_info({'EXIT', _FromPid, normal}, State) ->
 handle_info({'EXIT', FromPid, {{nocatch, Reason}, _Trace}}, State) ->
     ?LOG_DEBUG("Uncaught throw() in linked pid: ~p", [{FromPid, Reason}]),
     {stop, Reason, State};
+
+handle_info({'EXIT', Updater, Reason}, #group_state{updater_pid=Updater, group=Group}=State) ->
+    ?LOG_INFO("Exit from updater, starting a new one: ~p", [{Updater, Reason}]),
+    % needs code review from Damien, do we need to update the Group to account 
+    % for any writes that may have been lost in the unclean updater shutdown?
+    % context for this patch is regular updater timeouts on iOS.
+    % I am also experimenting with the work queue size.
+    Owner = self(),
+    Pid = spawn_link(
+        fun()-> couch_view_updater:update(Owner, Group) end
+    ),
+    {noreply, State#group_state{updater_pid = Pid}};
 
 handle_info({'EXIT', FromPid, Reason}, State) ->
     ?LOG_DEBUG("Exit from linked pid: ~p", [{FromPid, Reason}]),
