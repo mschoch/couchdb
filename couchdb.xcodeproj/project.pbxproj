@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXFileReference section */
-		795D60C9138725D8002B237E /* .DS_Store */ = {isa = PBXFileReference; lastKnownFileType = file; path = .DS_Store; sourceTree = "<group>"; };
+		795D60C9138725D8002B237E /* .DS_Store */ = {isa = PBXFileReference; lastKnownFileType = text; path = .DS_Store; sourceTree = "<group>"; };
 		795D60CA138725D8002B237E /* .git */ = {isa = PBXFileReference; lastKnownFileType = folder; path = .git; sourceTree = "<group>"; };
 		795D60CB138725D8002B237E /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
 		795D60CC138725D8002B237E /* acinclude.m4.in */ = {isa = PBXFileReference; lastKnownFileType = text; path = acinclude.m4.in; sourceTree = "<group>"; };
@@ -82,7 +82,7 @@
 			buildPhases = (
 			);
 			buildToolPath = /usr/bin/make;
-			buildWorkingDirectory = ./couchdb;
+			buildWorkingDirectory = ./;
 			dependencies = (
 			);
 			name = couchdb;
