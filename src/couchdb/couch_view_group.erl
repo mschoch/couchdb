@@ -245,10 +245,10 @@ handle_cast({partial_update, Pid, NewGroup}, #group_state{updater_pid=Pid}
         waiting_commit = WaitingCommit
     } = State,
     NewSeq = NewGroup#group.current_seq,
-    ?LOG_INFO("checkpointing view update at seq ~p for ~s ~s", [NewSeq,
-        DbName, NewGroup#group.name]),
     if not WaitingCommit ->
-        erlang:send_after(1000, self(), delayed_commit);
+        ?LOG_INFO("checkpointing view update at seq ~p for ~s ~s", [NewSeq,
+            DbName, NewGroup#group.name]),
+        erlang:send_after(5000, self(), delayed_commit);
     true -> ok
     end,
     {noreply, State#group_state{group=NewGroup, waiting_commit=true}};
