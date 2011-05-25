@@ -313,7 +313,8 @@ make_reduce_send_row_fun(QueryServer, Db) ->
         send_list_row(Resp, QueryServer, Db, Row, RowFront, false, false)
     end.
 
-send_list_row(Resp, QServer, Db, Row, RowFront, InclDoc) ->
+% TODO: actually pass Conflicts to the app server in this emonk branch
+send_list_row(Resp, QServer, Db, Row, RowFront, InclDoc, Conflicts) ->
     try
         {Go, Chunks} = couch_app_server:list_row(QServer, Db, Row, InclDoc),
         Chunk = RowFront ++ ?b2l(?l2b(Chunks)),
