@@ -630,10 +630,10 @@ init_group(Db, Fd, #group{def_lang=Lang,views=Views}=
             <<"raw">> ->
                 Less = fun(A,B) -> A < B end
             end,
-            {ok, Btree} = couch_btree:open(BTState, Fd,
+            {ok, Btree} = couch_btree:open(BtreeState, Fd,
                     [{less, Less}, {reduce, ReduceFun}]
             ),
-            View#view{btree=Btree, update_seq=USeq, purge_seq=PSeq}
+            View#view{btree=Btree, update_seq=Seq, purge_seq=PurgeSeq}
         end,
         ViewStates2, Views),
     Group#group{db=Db, fd=Fd, current_seq=Seq, purge_seq=PurgeSeq,
