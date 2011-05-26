@@ -1,0 +1,188 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXFileReference section */
+		795D60C9138725D8002B237E /* .DS_Store */ = {isa = PBXFileReference; lastKnownFileType = text; path = .DS_Store; sourceTree = "<group>"; };
+		795D60CA138725D8002B237E /* .git */ = {isa = PBXFileReference; lastKnownFileType = folder; path = .git; sourceTree = "<group>"; };
+		795D60CB138725D8002B237E /* .gitignore */ = {isa = PBXFileReference; lastKnownFileType = text; path = .gitignore; sourceTree = "<group>"; };
+		795D60CC138725D8002B237E /* acinclude.m4.in */ = {isa = PBXFileReference; lastKnownFileType = text; path = acinclude.m4.in; sourceTree = "<group>"; };
+		795D60CD138725D8002B237E /* AUTHORS */ = {isa = PBXFileReference; lastKnownFileType = text; path = AUTHORS; sourceTree = "<group>"; };
+		795D60CE138725D8002B237E /* bin */ = {isa = PBXFileReference; lastKnownFileType = folder; path = bin; sourceTree = "<group>"; };
+		795D60CF138725D8002B237E /* bootstrap */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = bootstrap; sourceTree = "<group>"; };
+		795D60D0138725D8002B237E /* BUGS */ = {isa = PBXFileReference; lastKnownFileType = text; path = BUGS; sourceTree = "<group>"; };
+		795D60D1138725D8002B237E /* CHANGES */ = {isa = PBXFileReference; lastKnownFileType = text; path = CHANGES; sourceTree = "<group>"; };
+		795D60D2138725D8002B237E /* configure.ac */ = {isa = PBXFileReference; lastKnownFileType = text; path = configure.ac; sourceTree = "<group>"; };
+		795D60D3138725D8002B237E /* DEVELOPERS */ = {isa = PBXFileReference; lastKnownFileType = text; path = DEVELOPERS; sourceTree = "<group>"; };
+		795D60D4138725D8002B237E /* etc */ = {isa = PBXFileReference; lastKnownFileType = folder; path = etc; sourceTree = "<group>"; };
+		795D60D5138725D8002B237E /* INSTALL.Unix */ = {isa = PBXFileReference; lastKnownFileType = text; path = INSTALL.Unix; sourceTree = "<group>"; };
+		795D60D6138725D8002B237E /* INSTALL.Windows */ = {isa = PBXFileReference; lastKnownFileType = text; path = INSTALL.Windows; sourceTree = "<group>"; };
+		795D60D7138725D8002B237E /* LICENSE */ = {isa = PBXFileReference; lastKnownFileType = text; path = LICENSE; sourceTree = "<group>"; };
+		795D60D8138725D8002B237E /* license.skip */ = {isa = PBXFileReference; lastKnownFileType = text; path = license.skip; sourceTree = "<group>"; };
+		795D60D9138725D8002B237E /* m4 */ = {isa = PBXFileReference; lastKnownFileType = folder; path = m4; sourceTree = "<group>"; };
+		795D60DA138725D8002B237E /* Makefile.am */ = {isa = PBXFileReference; lastKnownFileType = text; path = Makefile.am; sourceTree = "<group>"; };
+		795D60DB138725D8002B237E /* NEWS */ = {isa = PBXFileReference; lastKnownFileType = text; path = NEWS; sourceTree = "<group>"; };
+		795D60DC138725D8002B237E /* NOTICE */ = {isa = PBXFileReference; lastKnownFileType = text; path = NOTICE; sourceTree = "<group>"; };
+		795D60DD138725D8002B237E /* perf */ = {isa = PBXFileReference; lastKnownFileType = folder; path = perf; sourceTree = "<group>"; };
+		795D60DE138725D8002B237E /* README */ = {isa = PBXFileReference; lastKnownFileType = text; path = README; sourceTree = "<group>"; };
+		795D60DF138725D8002B237E /* share */ = {isa = PBXFileReference; lastKnownFileType = folder; path = share; sourceTree = "<group>"; };
+		795D60E0138725D8002B237E /* src */ = {isa = PBXFileReference; lastKnownFileType = folder; path = src; sourceTree = "<group>"; };
+		795D60E1138725D8002B237E /* test */ = {isa = PBXFileReference; lastKnownFileType = folder; path = test; sourceTree = "<group>"; };
+		795D60E2138725D8002B237E /* THANKS */ = {isa = PBXFileReference; lastKnownFileType = text; path = THANKS; sourceTree = "<group>"; };
+		795D60E3138725D8002B237E /* utils */ = {isa = PBXFileReference; lastKnownFileType = folder; path = utils; sourceTree = "<group>"; };
+		795D60E4138725D8002B237E /* var */ = {isa = PBXFileReference; lastKnownFileType = folder; path = var; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		795D60C1138725D8002B237E = {
+			isa = PBXGroup;
+			children = (
+				795D60C9138725D8002B237E /* .DS_Store */,
+				795D60CA138725D8002B237E /* .git */,
+				795D60CB138725D8002B237E /* .gitignore */,
+				795D60CC138725D8002B237E /* acinclude.m4.in */,
+				795D60CD138725D8002B237E /* AUTHORS */,
+				795D60CE138725D8002B237E /* bin */,
+				795D60CF138725D8002B237E /* bootstrap */,
+				795D60D0138725D8002B237E /* BUGS */,
+				795D60D1138725D8002B237E /* CHANGES */,
+				795D60D2138725D8002B237E /* configure.ac */,
+				795D60D3138725D8002B237E /* DEVELOPERS */,
+				795D60D4138725D8002B237E /* etc */,
+				795D60D5138725D8002B237E /* INSTALL.Unix */,
+				795D60D6138725D8002B237E /* INSTALL.Windows */,
+				795D60D7138725D8002B237E /* LICENSE */,
+				795D60D8138725D8002B237E /* license.skip */,
+				795D60D9138725D8002B237E /* m4 */,
+				795D60DA138725D8002B237E /* Makefile.am */,
+				795D60DB138725D8002B237E /* NEWS */,
+				795D60DC138725D8002B237E /* NOTICE */,
+				795D60DD138725D8002B237E /* perf */,
+				795D60DE138725D8002B237E /* README */,
+				795D60DF138725D8002B237E /* share */,
+				795D60E0138725D8002B237E /* src */,
+				795D60E1138725D8002B237E /* test */,
+				795D60E2138725D8002B237E /* THANKS */,
+				795D60E3138725D8002B237E /* utils */,
+				795D60E4138725D8002B237E /* var */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXLegacyTarget section */
+		795D60C8138725D8002B237E /* couchdb */ = {
+			isa = PBXLegacyTarget;
+			buildArgumentsString = "$(ACTION)";
+			buildConfigurationList = 795D60E5138725D8002B237E /* Build configuration list for PBXLegacyTarget "couchdb" */;
+			buildPhases = (
+			);
+			buildToolPath = /usr/bin/make;
+			buildWorkingDirectory = ./;
+			dependencies = (
+			);
+			name = couchdb;
+			passBuildSettingsInEnvironment = 1;
+			productName = couchdb;
+		};
+/* End PBXLegacyTarget section */
+
+/* Begin PBXProject section */
+		795D60C3138725D8002B237E /* Project object */ = {
+			isa = PBXProject;
+			buildConfigurationList = 795D60C6138725D8002B237E /* Build configuration list for PBXProject "couchdb" */;
+			compatibilityVersion = "Xcode 3.2";
+			developmentRegion = English;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+			);
+			mainGroup = 795D60C1138725D8002B237E;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				795D60C8138725D8002B237E /* couchdb */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin XCBuildConfiguration section */
+		795D60C4138725D8002B237E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_32_BIT)";
+				COPY_PHASE_STRIP = NO;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx10.6;
+			};
+			name = Debug;
+		};
+		795D60C5138725D8002B237E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = "$(ARCHS_STANDARD_32_BIT)";
+				COPY_PHASE_STRIP = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				SDKROOT = macosx10.6;
+			};
+			name = Release;
+		};
+		795D60E6138725D8002B237E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+				DEBUGGING_SYMBOLS = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_ENABLE_FIX_AND_CONTINUE = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = couchdb;
+			};
+			name = Debug;
+		};
+		795D60E7138725D8002B237E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_ENABLE_FIX_AND_CONTINUE = NO;
+				OTHER_CFLAGS = "";
+				OTHER_LDFLAGS = "";
+				PRODUCT_NAME = couchdb;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		795D60C6138725D8002B237E /* Build configuration list for PBXProject "couchdb" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				795D60C4138725D8002B237E /* Debug */,
+				795D60C5138725D8002B237E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		795D60E5138725D8002B237E /* Build configuration list for PBXLegacyTarget "couchdb" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				795D60E6138725D8002B237E /* Debug */,
+				795D60E7138725D8002B237E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 795D60C3138725D8002B237E /* Project object */;
+}
