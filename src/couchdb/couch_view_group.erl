@@ -338,8 +338,8 @@ handle_info({'EXIT', FromPid, {{nocatch, Reason}, _Trace}}, State) ->
     ?LOG_DEBUG("Uncaught throw() in linked pid: ~p", [{FromPid, Reason}]),
     {stop, Reason, State};
 
-handle_info({'EXIT', Updater, Reason}, #group_state{updater_pid=Updater, group=Group}=State) ->
-    ?LOG_INFO("Exit from updater, starting a new one: ~p", [{Updater, Reason}]),
+handle_info({'EXIT', Updater, {timeout, _}}, #group_state{updater_pid=Updater, group=Group}=State) ->
+    ?LOG_INFO("Exit from updater timeout, starting a new one: ~p", [Updater]),
     % needs code review from Damien, do we need to update the Group to account 
     % for any writes that may have been lost in the unclean updater shutdown?
     % context for this patch is regular updater timeouts on iOS.
