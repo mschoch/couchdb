@@ -609,16 +609,11 @@ delete_index_file(RootDir, DbName, GroupSig) ->
 init_group(Db, Fd, #group{views=Views}=Group, nil) ->
     init_group(Db, Fd, Group,
         #index_header{seq=0, purge_seq=couch_db:get_purge_seq(Db),
-            id_btree_state=nil, view_states=[{nil, 0, 0} || _ <- Views]});
+            id_btree_state=nil, view_states=[nil || _ <- Views]});
 init_group(Db, Fd, #group{def_lang=Lang,views=Views}=
             Group, IndexHeader) ->
      #index_header{seq=Seq, purge_seq=PurgeSeq,
             id_btree_state=IdBtreeState, view_states=ViewStates} = IndexHeader,
-    StateUpdate = fun
-        ({_, _, _}=State) -> State;
-        (State) -> {State, 0, 0}
-    end,
-    ViewStates2 = lists:map(StateUpdate, ViewStates),
     {ok, IdBtree} = couch_btree:open(IdBtreeState, Fd),
     Views2 = lists:zipwith(
         fun(BtreeState, #view{id_num=ViewId,reduce_funs=RedFuns,options=Options}=View) ->
@@ -647,6 +642,6 @@ init_group(Db, Fd, #group{def_lang=Lang,views=Views}=
             ),
             View#view{btree=Btree, update_seq=Seq, purge_seq=PurgeSeq}
         end,
-        ViewStates2, Views),
+        ViewStates, Views),
     Group#group{db=Db, fd=Fd, current_seq=Seq, purge_seq=PurgeSeq,
         id_btree=IdBtree, views=Views2}.
