@@ -46,8 +46,8 @@ couch_ejson_compare_la_LDFLAGS = -module -avoid-version $(ICU_LOCAL_FLAGS)
 couch_ejson_compare_la_LIBADD = $(ICU_LOCAL_LIBS)
 endif
 couch_icu_driver_la_SOURCES = icu_driver/couch_icu_driver.c
-couch_icu_driver_la_LDFLAGS = -module -avoid-version $(ICU_LOCAL_FLAGS)
-couch_icu_driver_la_CFLAGS = $(ICU_LOCAL_FLAGS)
+couch_icu_driver_la_LDFLAGS = -module -avoid-version
+couch_icu_driver_la_CFLAGS = $(ICU_LOCAL_FLAGS) $(ERLANG_FLAGS)
 couch_icu_driver_la_LIBADD = $(ICU_LOCAL_LIBS)
 endif
 
@@ -68,7 +68,7 @@ COUCHJS_SRCS = \
 
 locallibbin_PROGRAMS = couchjs
 couchjs_SOURCES = $(COUCHJS_SRCS)
-couchjs_CFLAGS = -D_BSD_SOURCE $(CURL_CFLAGS)
+couchjs_CFLAGS = -D_BSD_SOURCE $(CURL_CFLAGS) $(JS_CFLAGS)
 couchjs_LDADD = $(CURL_LIBS) $(JS_LIBS)
 
 if !WINDOWS
