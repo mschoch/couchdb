@@ -47,9 +47,8 @@ couch_ejson_compare_la_LIBADD = $(ICU_LOCAL_LIBS)
 endif
 couch_icu_driver_la_SOURCES = icu_driver/couch_icu_driver.c
 couch_icu_driver_la_LDFLAGS = -module -avoid-version
-couch_icu_driver_la_CFLAGS = $(ICU_LOCAL_FLAGS) $(ERLANG_FLAGS)
-couch_icu_driver_la_LIBADD = $(ICU_LOCAL_LIBS)
-endif
+couch_icu_driver_la_CFLAGS = $(ICU_CFLAGS) $(ERLANG_FLAGS)
+couch_icu_driver_la_LIBADD = $(ICU_LIBS)
 
 if WINDOWS
 couchjs_msbuild = couch_js/win32/msbuild.bat
@@ -178,9 +177,9 @@ install-data-hook:
 	        $(LN_S) couch_ejson_compare_nif couch_ejson_compare_nif.so; \
 	fi
 if WINDOWS
-	$(INSTALL) $(ICU_LOCAL_BIN)/icuuc44.dll $(bindir)
-	$(INSTALL) $(ICU_LOCAL_BIN)/icudt44.dll $(bindir)
-	$(INSTALL) $(ICU_LOCAL_BIN)/icuin44.dll $(bindir)
+	$(INSTALL) $(ICU_BIN)/icuuc42.dll $(bindir)
+	$(INSTALL) $(ICU_BIN)/icudt42.dll $(bindir)
+	$(INSTALL) $(ICU_BIN)/icuin42.dll $(bindir)
 	$(INSTALL) $(JS_LIB_BINARY) $(bindir)
 	$(INSTALL) .libs/couchspawnkillable.exe \
 		"$(DESTDIR)$(couchprivdir)/couchspawnkillable.exe"
