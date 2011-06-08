@@ -69,7 +69,7 @@ COUCHJS_SRCS = \
 locallibbin_PROGRAMS = couchjs
 couchjs_SOURCES = $(COUCHJS_SRCS)
 couchjs_CFLAGS = -D_BSD_SOURCE $(CURL_CFLAGS)
-couchjs_LDADD = $(CURL_LIBS) @JSLIB@
+couchjs_LDADD = $(CURL_LIBS) $(JS_LIBS)
 
 if !WINDOWS
 couchpriv_DATA = stat_descriptions.cfg
