@@ -61,6 +61,7 @@ endif
 COUCHJS_SRCS = \
 	couch_js/http.c \
 	couch_js/http.h \
+        couch_js/jscompat.h \
 	couch_js/main.c \
 	couch_js/utf8.c \
 	couch_js/utf8.h
