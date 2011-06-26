@@ -75,6 +75,7 @@
     method,
     requested_path_parts,
     path_parts,
+    db_frontend,
     db_url_handlers,
     user_ctx,
     req_body = undefined,
