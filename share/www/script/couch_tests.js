@@ -102,5 +102,6 @@ loadTest("view_pagination.js");
 loadTest("view_sandboxing.js");
 loadTest("view_update_seq.js");
 loadTest("view_xml.js");
+loadTest("view_merging.js");
 // keep sorted
 
