@@ -46,14 +46,7 @@ priv_dir() ->
     end.
 
 start_driver(LibDir) ->
-    case erl_ddll:load_driver(LibDir, "couch_icu_driver") of
-    ok ->
-        ok;
-    {error, already_loaded} ->
-        ok = erl_ddll:reload_driver(LibDir, "couch_icu_driver");
-    {error, Error} ->
-        exit(erl_ddll:format_error(Error))
-    end.
+    ok.
 
 % Normalize a pathname by removing .. and . components.
 normpath(Path) ->
