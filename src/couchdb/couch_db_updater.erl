@@ -42,6 +42,7 @@ init({MainPid, DbName, Filepath, Fd, Options}) ->
             file:delete(Filepath ++ ".compact")
         end
     end,
+
     Db = init_db(DbName, Filepath, Fd, Header, Options),
     Db2 = refresh_validate_doc_funs(Db),
     {ok, Db2#db{main_pid = MainPid}}.
@@ -67,7 +68,7 @@ handle_call(increment_update_seq, _From, Db) ->
 
 handle_call({set_security, NewSec}, _From, #db{compression = Comp} = Db) ->
     {ok, Ptr, _} = couch_file:append_term(
-        Db#db.updater_fd, NewSec, [{compression, Comp}]),
+        Db#db.fd, NewSec, [{compression, Comp}]),
     Db2 = commit_data(Db#db{security=NewSec, security_ptr=Ptr,
             update_seq=Db#db.update_seq+1}),
     ok = gen_server:call(Db2#db.main_pid, {db_updated, Db2}),
@@ -504,58 +505,6 @@ refresh_validate_doc_funs(Db) ->
 
 % rev tree functions
 
-flush_trees(_Db, [], AccFlushedTrees) ->
-    {ok, lists:reverse(AccFlushedTrees)};
-flush_trees(#db{updater_fd = Fd} = Db,
-        [InfoUnflushed | RestUnflushed], AccFlushed) ->
-    #full_doc_info{update_seq=UpdateSeq, rev_tree=Unflushed} = InfoUnflushed,
-    {Flushed, LeafsSize} = couch_key_tree:mapfold(
-        fun(_Rev, Value, Type, Acc) ->
-            case Value of
-            #doc{deleted = IsDeleted, body = {summary, Summary, AttsFd}} ->
-                % this node value is actually an unwritten document summary,
-                % write to disk.
-                % make sure the Fd in the written bins is the same Fd we are
-                % and convert bins, removing the FD.
-                % All bins should have been written to disk already.
-                case {AttsFd, Fd} of
-                {nil, _} ->
-                    ok;
-                {SameFd, SameFd} ->
-                    ok;
-                _ ->
-                    % Fd where the attachments were written to is not the same
-                    % as our Fd. This can happen when a database is being
-                    % switched out during a compaction.
-                    ?LOG_DEBUG("File where the attachments are written has"
-                            " changed. Possibly retrying.", []),
-                    throw(retry)
-                end,
-                {ok, NewSummaryPointer, SummarySize} =
-                    couch_file:append_raw_chunk(Fd, Summary),
-                TotalSize = lists:foldl(
-                    fun(#att{att_len = L}, A) -> A + L end,
-                    SummarySize, Value#doc.atts),
-                NewValue = {IsDeleted, NewSummaryPointer, UpdateSeq, TotalSize},
-                case Type of
-                leaf ->
-                    {NewValue, Acc + TotalSize};
-                branch ->
-                    {NewValue, Acc}
-                end;
-             {_, _, _, LeafSize} when Type =:= leaf, LeafSize =/= nil ->
-                {Value, Acc + LeafSize};
-             _ ->
-                {Value, Acc}
-            end
-        end, 0, Unflushed),
-    InfoFlushed = InfoUnflushed#full_doc_info{
-        rev_tree = Flushed,
-        leafs_size = LeafsSize
-    },
-    flush_trees(Db, RestUnflushed, [InfoFlushed | AccFlushed]).
-
-
 send_result(Client, Id, OriginalRevs, NewResult) ->
     % used to send a result to the client
     catch(Client ! {result, self(), {{Id, OriginalRevs}, NewResult}}).
@@ -655,10 +604,11 @@ modify_full_doc_info(Db, Id, MergeConflicts, OldDocInfo,
         {OldDocInfo, AccSeq};
     true ->
         NewSeq = AccSeq+1,
-        FlushedRevTree = couch_key_tree:map(
-            fun(_Rev, Value) ->
+        {FlushedRevTree, LeafsSize} = couch_key_tree:mapfold(
+            fun(_Rev, Value, Type, Acc) ->
                 case Value of
-                #doc_update_info{deleted = IsDeleted, summary = Summary, fd = SummaryFd} ->
+                #doc_update_info{deleted = IsDeleted, summary = Summary,
+                                 fd = SummaryFd, size_atts = SizeAtts} ->
                     % this node value is actually an unwritten document summary,
                     % write to disk.
                     % make sure the Fd in the written bins is the same Fd we are
@@ -677,20 +627,33 @@ modify_full_doc_info(Db, Id, MergeConflicts, OldDocInfo,
                                 " changed. Possibly retrying.", []),
                         throw(retry)
                     end,
-                    if is_list(Summary) orelse is_binary(Summary) ->
-                        {ok, SummaryPointer} =
-                            couch_file:append_raw_chunk(Fd, Summary);
-                    true ->
-                        SummaryPointer = Summary
+                    case Summary of
+                    {SummaryPointer, SummarySize} ->
+                        ok;
+                    _ when is_list(Summary) orelse is_binary(Summary) ->
+                        {ok, SummaryPointer, SummarySize} =
+                            couch_file:append_raw_chunk(Fd, Summary)
                     end,
-                    {IsDeleted, SummaryPointer, NewSeq};
+                    TotalSize = SummarySize + SizeAtts,
+                    NewValue = {IsDeleted, SummaryPointer, NewSeq, TotalSize},
+                    case Type of
+                    leaf ->
+                        {NewValue, Acc + TotalSize};
+                    branch ->
+                        {NewValue, Acc}
+                    end;
+                {_, _, _, LeafSize} when Type =:= leaf, LeafSize =/= nil ->
+                    {Value, Acc + LeafSize};
                 _ ->
-                    Value
+                    {Value, Acc}
                 end
-            end, NewRevTree),
-        NewFullDocInfo = #full_doc_info{id=Id,
-                    update_seq=NewSeq,
-                    rev_tree=FlushedRevTree},
+            end, 0, NewRevTree),
+        NewFullDocInfo = #full_doc_info{
+             id = Id,
+             update_seq = NewSeq,
+             rev_tree = FlushedRevTree,
+             leafs_size = LeafsSize
+        },
         % get the deleted flag
         #doc_info{revs=[#rev_info{deleted=Deleted}|_]} =
                         couch_doc:to_doc_info(NewFullDocInfo),
@@ -707,25 +670,18 @@ update_docs_int(Db, DocsList, NonRepDocs, MergeConflicts, FullCommit) ->
         fd = Fd
         } = Db,
     % lookup up the old documents, if they exist.
-    PrepFunctionsStart = erlang:now(),
     KeyModFuns = lists:map(fun([{_Client, #doc_update_info{id=Id}}|_] = Docs) ->
             {Id, fun(PrevValue, LastSeqAcc) ->
                 modify_full_doc_info(Db, Id, MergeConflicts, PrevValue, Docs, LastSeqAcc)
             end}
         end, DocsList),
 
-    PrepFunctionsDone = timer:now_diff(erlang:now(), PrepFunctionsStart),
-    
-    ModifyByIdStart = erlang:now(),
     {ok, KeyResults, NewSeq, DocInfoByIdBTree2} =
             couch_btree:modify(DocInfoByIdBTree, KeyModFuns, LastSeq),
 
     % Write out the document summaries (the bodies are stored in the nodes of
     % the trees, the attachments are already written to disk)
-    
-    ModifyByIdDone = timer:now_diff(erlang:now(),ModifyByIdStart),
-    
-    UpdateBySeqIndexStart = erlang:now(),
+
     % and the indexes
     {NewBySeqEntries, RemoveSeqs} = by_seq_index_entries(KeyResults, [], []),
     InsertBySeq = [begin {K, V} = btree_by_seq_split(I), {insert, K, V} end || I <- NewBySeqEntries],
@@ -733,17 +689,12 @@ update_docs_int(Db, DocsList, NonRepDocs, MergeConflicts, FullCommit) ->
 
     {ok, [], DocInfoBySeqBTree2} = couch_btree:query_modify_raw(DocInfoBySeqBTree, RemoveBySeq ++ InsertBySeq),
 
-    UpdateBySeqIndexDone = timer:now_diff(erlang:now(), UpdateBySeqIndexStart),
-
     {ok, Db2} = update_local_docs(Db, NonRepDocs),
 
     Db3 = Db2#db{
         fulldocinfo_by_id_btree = DocInfoByIdBTree2,
         docinfo_by_seq_btree = DocInfoBySeqBTree2,
-        update_seq = NewSeq,
-        prep_fun_t = PrepFunctionsDone + Db#db.prep_fun_t,
-        mod_by_id_t = ModifyByIdDone + Db#db.mod_by_id_t,
-        update_by_seq_t = UpdateBySeqIndexDone + Db#db.update_by_seq_t
+        update_seq = NewSeq
         },
     couch_file:flush(Fd),
     % Check if we just updated any design documents, and update the validation
@@ -851,7 +802,7 @@ commit_data(Db, _) ->
     end.
 
 
-copy_doc_attachments(#db{updater_fd = SrcFd} = SrcDb, SrcSp, DestFd) ->
+copy_doc_attachments(#db{fd = SrcFd} = SrcDb, SrcSp, DestFd) ->
     {ok, {BodyData, BinInfos0}} = couch_db:read_doc(SrcDb, SrcSp),
     BinInfos = case BinInfos0 of
     _ when is_binary(BinInfos0) ->
@@ -988,7 +939,7 @@ copy_compact(Db, NewDb0, Retry) ->
     % copy misc header values
     if NewDb3#db.security /= Db#db.security ->
         {ok, Ptr, _} = couch_file:append_term(
-            NewDb3#db.updater_fd, Db#db.security,
+            NewDb3#db.fd, Db#db.security,
             [{compression, NewDb3#db.compression}]),
         NewDb4 = NewDb3#db{security=Db#db.security, security_ptr=Ptr};
     true ->
