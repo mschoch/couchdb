@@ -110,7 +110,6 @@ append_binary_md5(Fd, Bin) ->
 append_raw_chunk(Fd, Chunk) ->
     gen_server:call(Fd, {append_bin, Chunk}, infinity).
 
-
 assemble_file_chunk(Bin) ->
     [<<0:1/integer, (iolist_size(Bin)):31/integer>>, Bin].
 
@@ -327,34 +326,28 @@ handle_call({pread_iolist, Pos}, From, #file{reader = Reader} = File) ->
     Reader ! {read, Pos, From},
     {noreply, File};
 
-handle_call(bytes, _From, #file{fd = Fd} = File) ->
-    {reply, file:position(Fd, eof), File};
+handle_call(bytes, _From, #file{eof = Eof} = File) ->
+    {reply, {ok, Eof}, File};
 
-handle_call(sync, _From, #file{fd=Fd}=File) ->
-    {reply, file:sync(Fd), File};
+handle_call(sync, From, #file{writer = W} = File) ->
+    W ! {sync, From},
+    {noreply, File};
 
-handle_call({truncate, Pos}, _From, #file{fd=Fd}=File) ->
-    {ok, Pos} = file:position(Fd, Pos),
-    case file:truncate(Fd) of
-    ok ->
-        {reply, ok, File#file{eof = Pos}};
-    Error ->
-        {reply, Error, File}
-    end;
+handle_call({truncate, Pos}, _From, #file{writer = W} = File) ->
+    W ! {truncate, Pos, self()},
+    receive {W, truncated, Pos} -> ok end,
+    {reply, ok, File#file{eof = Pos}};
 
-handle_call({append_bin, Bin}, _From, #file{fd = Fd, eof = Pos} = File) ->
-    Blocks = make_blocks(Pos rem ?SIZE_BLOCK, Bin),
-    Size = iolist_size(Blocks),
-    case file:write(Fd, Blocks) of
-    ok ->
-        {reply, {ok, Pos, Size}, File#file{eof = Pos + Size}};
-    Error ->
-        {reply, Error, File}
-    end;
+handle_call({append_bin, Bin}, From, #file{writer = W, eof = Pos} = File) ->
+    Size = calculate_total_read_len(Pos rem ?SIZE_BLOCK, iolist_size(Bin)),
+    gen_server:reply(From, {ok, Pos, Size}),
+    W ! {chunk, Bin},
+    {noreply, File#file{eof = Pos + Size}};
 
-handle_call({write_header, Bin}, _From, #file{fd = Fd, eof = Pos} = File) ->
-    BinSize = byte_size(Bin),
-    case Pos rem ?SIZE_BLOCK of
+handle_call({write_header, Bin}, From, #file{writer = W, eof = Pos} = File) ->
+    gen_server:reply(From, ok),
+    W ! {header, Bin},
+    Pos2 = case Pos rem ?SIZE_BLOCK of
     0 ->
         Pos + 5;
     BlockOffset ->
