@@ -387,6 +387,7 @@ fi
 
 use_init=yes
 use_launchd=yes
+native_mochijson_enabled=no
 
 AC_ARG_ENABLE([init], [AC_HELP_STRING([--disable-init],
     [don't install init script where applicable])], [
@@ -396,6 +397,11 @@ AC_ARG_ENABLE([init], [AC_HELP_STRING([--disable-init],
 AC_ARG_ENABLE([launchd], [AC_HELP_STRING([--disable-launchd],
     [don't install launchd configuration where applicable])], [
     use_launchd=$enableval
+], [])
+
+AC_ARG_ENABLE([native-mochijson], [AC_HELP_STRING([--enable-native-mochijson],
+    [compile mochijson to native code (EXPERIMENTAL)])], [
+    native_mochijson_enabled=$enableval
 ], [])
 
 init_enabled=false
