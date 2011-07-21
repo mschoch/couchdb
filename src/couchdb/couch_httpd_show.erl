@@ -124,7 +124,7 @@ handle_doc_update_req(Req, _Db, _DDoc) ->
 
 send_doc_update_response(Req, Db, DDoc, UpdateName, Doc, DocId) ->
     JsonReq = {json_req, couch_httpd_external:json_req_obj(Req, Db, DocId)},
-    Opts = case couch_httpd:header_value(Req, "X-Couch-Full-Commit", "false") of
+    Options = case couch_httpd:header_value(Req, "X-Couch-Full-Commit", "false") of
         "true" -> [full_commit];
         _ -> []
     end,
