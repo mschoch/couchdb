@@ -254,7 +254,6 @@ get_last_purged(#db{fd=Fd, header=#db_header{purged_docs=PurgedPointer}}) ->
 get_db_info(Db) ->
     #db{fd=Fd,
         header=#db_header{disk_version=DiskVersion},
-        fulldocinfo_by_id_btree = IdBTree,
         compactor_pid=Compactor,
         update_seq=SeqNum,
         name=Name,
@@ -265,7 +264,7 @@ get_db_info(Db) ->
         local_docs_btree = LocalBtree
     } = Db,
     {ok, Size} = couch_file:bytes(Fd),
-    {ok, DbReduction} = couch_btree:full_reduce(by_id_btree(Db)),
+    {ok, DbReduction} = couch_btree:full_reduce(IdBtree),
     InfoList = [
         {db_name, Name},
         {doc_count, element(1, DbReduction)},
@@ -277,12 +276,7 @@ get_db_info(Db) ->
         {data_size, db_data_size(DbReduction, [SeqBtree, IdBtree, LocalBtree])},
         {instance_start_time, StartTime},
         {disk_format_version, DiskVersion},
-        {committed_update_seq, CommittedUpdateSeq},
-        {collect_t,Collect_t/1000},
-        {notify_t,Notify_t/1000},
-        {prep_fun_t,Prep_fun_t/1000},
-        {mod_by_id_t,Mod_by_id_t/1000},
-        {update_by_seq_t,Update_by_seq_t/1000}
+        {committed_update_seq, CommittedUpdateSeq}
         ],
     {ok, InfoList}.
 
@@ -608,7 +602,7 @@ prep_and_validate_replicated_updates(Db, [Bucket|RestBuckets], [OldInfo|RestOldI
         prep_and_validate_replicated_updates(Db, RestBuckets, RestOldInfo, [ValidatedBucket | AccPrepped], AccErrors3);
     {ok, #full_doc_info{rev_tree=OldTree}} ->
         NewRevTree = lists:foldl(
-            fun(#doc{revs=Revs}=NewDoc, AccTree) ->
+            fun(#doc{revs=Revs}, AccTree) ->
                 {NewTree, _} = couch_key_tree:merge(AccTree,
                     to_replicated_path(Revs), Db#db.revs_limit),
                 NewTree
@@ -837,9 +831,8 @@ collect_results(UpdatePid, MRef, ResultsAcc) ->
 
 write_and_commit(#db{update_pid=UpdatePid}=Db, DocBuckets1,
         NonRepDocs, Options0) ->
-    DocBuckets = prepare_doc_summaries(Db, DocBuckets1),
     Options = set_commit_option(Options0),
-    DocBuckets = prepare_doc_summaries(DocBuckets1, Fd, Options),
+    DocBuckets = prepare_doc_summaries(Db, DocBuckets1, Options),
     MergeConflicts = lists:member(merge_conflicts, Options),
     FullCommit = lists:member(full_commit, Options),
     MRef = erlang:monitor(process, UpdatePid),
@@ -852,11 +845,11 @@ write_and_commit(#db{update_pid=UpdatePid}=Db, DocBuckets1,
             % compaction. Retry by reopening the db and writing to the current file
             {ok, Db2} = open_ref_counted(Db#db.main_pid, self()),
             DocBuckets2 = [
-                [doc_flush_atts(Doc, Db2#db.updater_fd) || Doc <- Bucket] ||
+                [doc_flush_atts(Doc, Db2#db.fd) || Doc <- Bucket] ||
                 Bucket <- DocBuckets1
             ],
             % We only retry once
-            DocBuckets3 = prepare_doc_summaries(Db2, DocBuckets2),
+            DocBuckets3 = prepare_doc_summaries(Db2, DocBuckets2, Options),
             close(Db2),
             UpdatePid ! {update_docs, self(), DocBuckets3, NonRepDocs, MergeConflicts, FullCommit},
             case collect_results(UpdatePid, MRef, []) of
@@ -869,20 +862,38 @@ write_and_commit(#db{update_pid=UpdatePid}=Db, DocBuckets1,
     end.
 
 
-prepare_doc_summaries(Db, BucketList) ->
+prepare_doc_summaries(Db, BucketList, Options) ->
+    Optimistic = lists:member(optimistic, Options),
     [lists:map(
         fun(#doc{body = Body, atts = Atts} = Doc) ->
-            DiskAtts = [{N, T, P, AL, DL, R, M, E} ||
-                #att{name = N, type = T, data = {_, P}, md5 = M, revpos = R,
-                    att_len = AL, disk_len = DL, encoding = E} <- Atts],
+            {DiskAtts, SizeAtts} = lists:mapfoldl(
+                fun(#att{name = N, type = T, data = {_, P}, md5 = M, revpos = R,
+                    att_len = AL, disk_len = DL, encoding = E}, SizeAcc) ->
+                    {{N, T, P, AL, DL, R, M, E}, SizeAcc + AL}
+                end,
+                0, Atts),
+            SummaryChunk = couch_db_updater:make_doc_summary(Db, {Body, DiskAtts}),
+            if Optimistic ->
+                {ok, SummaryPos, SummarySize} =
+                    couch_file:append_raw_chunk(Db#db.fd, SummaryChunk),
+                Summary = {SummaryPos, SummarySize};
+            true ->
+                Summary = SummaryChunk
+            end,
             AttsFd = case Atts of
             [#att{data = {Fd, _}} | _] ->
                 Fd;
             [] ->
                 nil
             end,
-            SummaryChunk = couch_db_updater:make_doc_summary(Db, {Body, DiskAtts}),
-            Doc#doc{body = {summary, SummaryChunk, AttsFd}}
+            #doc_update_info{
+                id=Doc#doc.id,
+                revs=Doc#doc.revs,
+                deleted=Doc#doc.deleted,
+                summary=Summary,
+                size_atts=SizeAtts,
+                fd=AttsFd
+            }
         end,
         Bucket) || Bucket <- BucketList].
 
@@ -1171,7 +1182,7 @@ open_doc_revs_int(Db, IdRevs, Options) ->
         IdRevs, LookupResults).
 
 open_doc_int(Db, <<?LOCAL_DOC_PREFIX, _/binary>> = Id, Options) ->
-    case couch_btree:lookup(local_btree(Db), [Id]) of
+    case couch_btree:lookup(Db#db.local_docs_btree, [Id]) of
     [{ok, {_, {Rev, BodyData}}}] ->
         Doc = #doc{id=Id, revs={0, [?l2b(integer_to_list(Rev))]}, body=BodyData},
         apply_open_options({ok, Doc}, Options);
