@@ -48,7 +48,7 @@ request_group(Pid, Seq) ->
     end.
 
 request_group_info(Pid) ->
-    case gen_server:call(Pid, request_group_info, infinity) of
+    case gen_server:call(Pid, request_group_info) of
     {ok, GroupInfoList} ->
         {ok, GroupInfoList};
     Error ->
@@ -337,7 +337,11 @@ handle_info({'EXIT', Updater, {timeout, _}}, #group_state{updater_pid=Updater, g
 
 handle_info({'EXIT', FromPid, Reason}, State) ->
     ?LOG_DEBUG("Exit from linked pid: ~p", [{FromPid, Reason}]),
-    {stop, Reason, State}.
+    {stop, Reason, State};
+
+handle_info({'DOWN',_,_,_,_}, State) ->
+    ?LOG_INFO("Shutting down view group server, monitored db is closing.", []),
+    {stop, normal, reply_all(State, shutdown)}.
 
 
 terminate(Reason, #group_state{updater_pid=Update, compactor_pid=Compact}=S) ->
@@ -606,7 +610,7 @@ delete_index_file(RootDir, DbName, GroupSig) ->
 init_group(Db, Fd, #group{views=Views}=Group, nil) ->
     init_group(Db, Fd, Group,
         #index_header{seq=0, purge_seq=couch_db:get_purge_seq(Db),
-            id_btree_state=nil, view_states=[nil || _ <- Views]});
+            id_btree_state=nil, view_states=[{nil, 0, 0} || _ <- Views]});
 init_group(Db, Fd, #group{def_lang=Lang,views=Views}=
             Group, IndexHeader) ->
      #index_header{seq=Seq, purge_seq=PurgeSeq,
@@ -619,18 +623,20 @@ init_group(Db, Fd, #group{def_lang=Lang,views=Views}=
     {ok, IdBtree} = couch_btree:open(
         IdBtreeState, Fd, [{compression, Db#db.compression}]),
     Views2 = lists:zipwith(
-        fun(BtreeState, #view{id_num=ViewId,reduce_funs=RedFuns,options=Options}=View) ->
+        fun({BTState, USeq, PSeq}, #view{reduce_funs=RedFuns,options=Options}=View) ->
             FunSrcs = [FunSrc || {_Name, FunSrc} <- RedFuns],
             ReduceFun =
                 fun(reduce, KVs) ->
                     KVs2 = couch_view:expand_dups(KVs,[]),
                     KVs3 = couch_view:detuple_kvs(KVs2,[]),
-                    {ok, Reduced} = couch_view_server:reduce(Lang, ViewId, FunSrcs, KVs3),
+                    {ok, Reduced} = couch_query_servers:reduce(Lang, FunSrcs,
+                        KVs3),
                     {length(KVs3), Reduced};
                 (rereduce, Reds) ->
                     Count = lists:sum([Count0 || {Count0, _} <- Reds]),
                     UserReds = [UserRedsList || {_, UserRedsList} <- Reds],
-                    {ok, Reduced} = couch_view_server:rereduce(Lang, ViewId, FunSrcs, UserReds),
+                    {ok, Reduced} = couch_query_servers:rereduce(Lang, FunSrcs,
+                        UserReds),
                     {Count, Reduced}
                 end,
             
@@ -644,7 +650,7 @@ init_group(Db, Fd, #group{def_lang=Lang,views=Views}=
                     [{less, Less}, {reduce, ReduceFun},
                         {compression, Db#db.compression}]
             ),
-            View#view{btree=Btree, update_seq=Seq, purge_seq=PurgeSeq}
+            View#view{btree=Btree, update_seq=USeq, purge_seq=PSeq}
         end,
         ViewStates2, Views),
     Group#group{fd=Fd, current_seq=Seq, purge_seq=PurgeSeq,
