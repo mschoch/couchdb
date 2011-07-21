@@ -117,31 +117,6 @@ get_level_integer() ->
 set_level_integer(Int) ->
     gen_event:call(error_logger, couch_log, {set_level_integer, Int}).
 
-handle_event({couch_error, ConMsg, FileMsg}, {Fd, _LogLevel, _Sasl}=State) ->
-    log(Fd, ConMsg, FileMsg),
-    {ok, State};
-handle_event({couch_info, ConMsg, FileMsg}, {Fd, LogLevel, _Sasl}=State)
-when LogLevel =< ?LEVEL_INFO ->
-    log(Fd, ConMsg, FileMsg),
-    {ok, State};
-handle_event({couch_debug, ConMsg, FileMsg}, {Fd, LogLevel, _Sasl}=State)
-when LogLevel =< ?LEVEL_DEBUG ->
-    log(Fd, ConMsg, FileMsg),
-    {ok, State};
-handle_event({error_report, _, {Pid, _, _}}=Event, {Fd, _LogLevel, Sasl}=State)
-when Sasl =/= false ->
-    {ConMsg, FileMsg} = get_log_messages(Pid, error, "~p", [Event]),
-    log(Fd, ConMsg, FileMsg),
-    {ok, State};
-handle_event({error, _, {Pid, Format, Args}}, {Fd, _LogLevel, Sasl}=State)
-when Sasl =/= false ->
-    {ConMsg, FileMsg} = get_log_messages(Pid, error, Format, Args),
-    log(Fd, ConMsg, FileMsg),
-    {ok, State};
-handle_event({_, _, {Pid, _, _}}=Event, {Fd, LogLevel, _Sasl}=State)
-when LogLevel =< ?LEVEL_TMI ->
-    % log every remaining event if tmi!
-    log(Fd, Pid, tmi, "~p", [Event]),
 handle_event({couch_error, ConMsg, FileMsg}, State) ->
     log(State, ConMsg, FileMsg),
     {ok, State};
@@ -178,16 +153,6 @@ terminate(_Arg, #state{fd = Fd}) ->
     file:close(Fd).
 
 log(#state{fd = Fd}, ConsoleMsg, FileMsg) ->
-    ok = io:put_chars(ConsoleMsg),
-    ok = io:put_chars(Fd, FileMsg).
-
-get_log_messages(Pid, Level, Format, Args) ->
-    ConsoleMsg = io_lib:format(
-        "[~s] [~p] " ++ Format ++ "~n", [Level, Pid | Args]),
-    FileMsg = ["[", httpd_util:rfc1123_date(), "] ", ConsoleMsg],
-    {iolist_to_binary(ConsoleMsg), iolist_to_binary(FileMsg)}.
-
-log(Fd, ConsoleMsg, FileMsg) ->
     ok = io:put_chars(ConsoleMsg),
     ok = io:put_chars(Fd, FileMsg).
 
