@@ -26,6 +26,7 @@
 
 -define(b2l(V), binary_to_list(V)).
 -define(l2b(V), list_to_binary(V)).
+-define(l2i(V), list_to_integer(V)).
 -define(term_to_bin(T), term_to_binary(T, [{minor_version, 1}])).
 -define(term_size(T),
     try
