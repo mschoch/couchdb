@@ -26,7 +26,6 @@
 
 -define(b2l(V), binary_to_list(V)).
 -define(l2b(V), list_to_binary(V)).
--define(l2i(V), list_to_integer(V)).
 -define(term_to_bin(T), term_to_binary(T, [{minor_version, 1}])).
 -define(term_size(T),
     try
@@ -122,6 +121,7 @@
     revs,
     deleted,
     summary,
+    size_atts,
     fd}).
 
 -record(att,
@@ -197,12 +197,6 @@
     revs_limit = 1000,
     fsync_options = [],
     options = [],
-    collect_t=0,
-    notify_t=0,
-    prep_fun_t=0,
-    mod_by_id_t=0,
-    update_by_seq_t=0,
-    append_term_options = [],
     compression
     }).
 
