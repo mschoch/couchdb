@@ -311,6 +311,13 @@ AC_COMPILE_IFELSE(
 CFLAGS="$OLD_CFLAGS"
 AC_LANG_POP(C)
 
+AC_ARG_WITH([android], [AC_HELP_STRING([--with-android=PATH]
+    [set Android system build path])],[
+    ICU_CONFIG=""
+    ICU_CFLAGS="-I$withval/external/icu4c/common -I$withval/external/icu4c/i18n"
+    ICU_LIBS="-L$withval/out/target/product/generic/system/lib"
+    ICU_BIN=
+], [
 AC_ARG_WITH([win32-icu-binaries], [AC_HELP_STRING([--with-win32-icu-binaries=PATH],
     [set PATH to the Win32 native ICU binaries directory])], [
     ICU_CFLAGS="-I$withval/include"
@@ -319,7 +326,7 @@ AC_ARG_WITH([win32-icu-binaries], [AC_HELP_STRING([--with-win32-icu-binaries=PAT
 ], [
     AC_CHECK_ICU([3.4.1])
     ICU_BIN=
-])
+])])
 
 AC_SUBST(ICU_CFLAGS)
 AC_SUBST(ICU_LIBS)
@@ -345,6 +352,7 @@ AC_ARG_WITH([win32-curl], [AC_HELP_STRING([--with-win32-curl=PATH],
 AC_SUBST(CURL_CFLAGS)
 AC_SUBST(CURL_LIBS)
 
+if test "x$CC" != "xagcc"; then
 case "$(uname -s)" in
   Linux)
     LIBS="$LIBS -lcrypt"
@@ -357,6 +365,7 @@ case "$(uname -s)" in
     LIBS="$LIBS -lcrypto"
   ;;
 esac
+fi
 
 AC_PATH_PROG([ERL], [erl])
 
@@ -384,14 +393,15 @@ fi
 
 otp_release="`${ERL} -noshell -eval 'io:put_chars(erlang:system_info(otp_release)).' -s erlang halt`"
 AC_SUBST(otp_release)
-AM_CONDITIONAL([USE_OTP_NIFS], [test x$otp_release \> xR13B03])
+#AM_CONDITIONAL([USE_OTP_NIFS], [test x$otp_release \> xR13B03])
+AM_CONDITIONAL([USE_OTP_NIFS], [false])
 AM_CONDITIONAL([USE_EJSON_COMPARE_NIF], [test x$otp_release \> xR13B04])
 
 has_crypto=`${ERL} -eval "case application:load(crypto) of ok -> ok; _ -> exit(no_crypto) end." -noshell -s init stop`
 
-if test -n "$has_crypto"; then
-    AC_MSG_ERROR([Could not find the Erlang crypto library. Has Erlang been compiled with OpenSSL support?])
-fi
+#if test -n "$has_crypto"; then
+#    AC_MSG_ERROR([Could not find the Erlang crypto library. Has Erlang been compiled with OpenSSL support?])
+#fi
 
 AC_PATH_PROG([ERLC], [erlc])
 
