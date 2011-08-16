@@ -376,6 +376,7 @@ AC_ARG_WITH([win32-curl], [AC_HELP_STRING([--with-win32-curl=PATH],
 AC_SUBST(CURL_CFLAGS)
 AC_SUBST(CURL_LIBS)
 
+if test "x$CC" != "xagcc"; then
 case "$(uname -s)" in
   Linux)
     LIBS="$LIBS -lcrypt"
@@ -388,6 +389,7 @@ case "$(uname -s)" in
     LIBS="$LIBS -lcrypto"
   ;;
 esac
+fi
 
 AC_PATH_PROG([ERL], [erl])
 
@@ -419,8 +421,10 @@ AM_CONDITIONAL([USE_OTP_NIFS], [test x$otp_release \> xR13B03])
 
 has_crypto=`${ERL} -eval "case application:load(crypto) of ok -> ok; _ -> exit(no_crypto) end." -noshell -s init stop`
 
+if test "x$CC" != "xagcc"; then
 if test -n "$has_crypto"; then
     AC_MSG_ERROR([Could not find the Erlang crypto library. Has Erlang been compiled with OpenSSL support?])
+fi
 fi
 
 AC_PATH_PROG([ERLC], [erlc])
