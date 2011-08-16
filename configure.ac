@@ -337,6 +337,13 @@ AC_COMPILE_IFELSE(
 CFLAGS="$OLD_CFLAGS"
 AC_LANG_POP(C)
 
+AC_ARG_WITH([android], [AC_HELP_STRING([--with-android=PATH]
+    [set Android system build path])],[
+    ICU_CONFIG=""
+    ICU_CFLAGS="-I$withval/external/icu4c/common -I$withval/external/icu4c/i18n"
+    ICU_LIBS="-L$withval/out/target/product/generic/system/lib"
+    ICU_BIN=
+], [
 AC_ARG_WITH([win32-icu-binaries], [AC_HELP_STRING([--with-win32-icu-binaries=PATH],
     [set PATH to the Win32 native ICU binaries directory])], [
     ICU_CFLAGS="-I$withval/include"
@@ -345,7 +352,7 @@ AC_ARG_WITH([win32-icu-binaries], [AC_HELP_STRING([--with-win32-icu-binaries=PAT
 ], [
     AC_CHECK_ICU([3.4.1])
     ICU_BIN=
-])
+])])
 
 AC_SUBST(ICU_CFLAGS)
 AC_SUBST(ICU_LIBS)
