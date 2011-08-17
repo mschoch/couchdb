@@ -130,7 +130,7 @@ PKG_CHECK_MODULES([JS], [mozjs185], [
         JS_LIB_DIR="$(${PKG_CONFIG} --variable=sdkdir mozilla-js)/lib"
     ], [
         JS_LIB_DIR="${libdir}"
-        JS_CFLAGS="-I/usr/include"
+        JS_CFLAGS="$JS_CFLAGS -I/usr/include"
         JS_CFLAGS="$JS_CFLAGS -I/usr/include/js"
         JS_CFLAGS="$JS_CFLAGS -I/usr/include/mozjs"
         JS_CFLAGS="$JS_CFLAGS -I/usr/local/include/js"
@@ -165,19 +165,6 @@ CFLAGS="-O2 $CFLAGS"
 
 LIB_FLAGS="-L/usr/local/lib -L/opt/local/lib"
 LIBS="$LIB_FLAGS $LIBS"
-
-case "$(uname -s)" in
-  CYGWIN*|MINGW*)
-    FLAGS="$LIB_FLAGS $ERLANG_FLAGS $JS_FLAGS -DXP_WIN $FLAGS"
-    CPPFLAGS="$FLAGS $CPPFLAGS"
-    LDFLAGS="$FLAGS $LDFLAGS"
-    IS_WINDOWS="TRUE"
-    ;;
-  *)
-    # XP_UNIX required for jsapi.h and has been tested to work on Linux and Darwin.
-    JS_CFLAGS="-DXP_UNIX $JS_CFLAGS"
-    ;;
-esac
 
 AM_CONDITIONAL([WINDOWS], [test x$IS_WINDOWS = xTRUE])
 
@@ -417,7 +404,8 @@ fi
 
 otp_release="`${ERL} -noshell -eval 'io:put_chars(erlang:system_info(otp_release)).' -s erlang halt`"
 AC_SUBST(otp_release)
-AM_CONDITIONAL([USE_OTP_NIFS], [test x$otp_release \> xR13B03])
+#AM_CONDITIONAL([USE_OTP_NIFS], [test x$otp_release \> xR13B03])
+AM_CONDITIONAL([USE_OTP_NIFS], [false])
 
 has_crypto=`${ERL} -eval "case application:load(crypto) of ok -> ok; _ -> exit(no_crypto) end." -noshell -s init stop`
 

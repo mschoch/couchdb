@@ -36,6 +36,7 @@ COUCH_EJSON_COMPARE = $(EJSON_COMPARE_DIR)/couch_ejson_compare.dll
 else
 ICU_LOCAL_FLAGS = $(ICU_LOCAL_CFLAGS) $(ICU_LOCAL_LDFLAGS)
 ICU_LOCAL_LIBS=-licuuc -licudata -licui18n
+endif
 
 couchprivlib_LTLIBRARIES = couch_icu_driver.la
 if USE_OTP_NIFS
@@ -68,7 +69,7 @@ COUCHJS_SRCS = \
 
 locallibbin_PROGRAMS = couchjs
 couchjs_SOURCES = $(COUCHJS_SRCS)
-couchjs_CFLAGS = -D_BSD_SOURCE $(CURL_CFLAGS) $(JS_CFLAGS)
+couchjs_CFLAGS = -DXP_UNIX -D_BSD_SOURCE $(CURL_CFLAGS) $(JS_CFLAGS)
 couchjs_LDADD = $(CURL_LIBS) $(JS_LIBS)
 
 if !WINDOWS
@@ -162,9 +163,9 @@ endif
 
 # libtool and automake have defeated markh.  For each of our executables
 # we end up with 2 copies - one directly in the 'target' folder (eg, 'priv')
-# and another - the correct one - in .libs.  The former doesn't work but is 
+# and another - the correct one - in .libs.  The former doesn't work but is
 # what gets installed for 'couchspawnkillable' - but the correct one for
-# couchjs.exe *does* get copied.  *shrug*  So just clobber it with the 
+# couchjs.exe *does* get copied.  *shrug*  So just clobber it with the
 # correct one as the last step. See bug COUCHDB-439
 install-data-hook:
 	if test -f "$(DESTDIR)$(couchprivlibdir)/couch_icu_driver"; then \
