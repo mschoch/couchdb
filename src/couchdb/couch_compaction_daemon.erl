@@ -14,7 +14,7 @@
 -behaviour(gen_server).
 
 % public API
--export([start_link/0]).
+-export([start_link/0, config_change/3]).
 
 % gen_server callbacks
 -export([init/1, handle_call/3, handle_info/2, handle_cast/2]).
@@ -42,8 +42,8 @@
 }).
 
 -record(period, {
-    from,
-    to
+    from = nil,
+    to = nil
 }).
 
 
@@ -54,37 +54,15 @@ start_link() ->
 init(_) ->
     process_flag(trap_exit, true),
     ?CONFIG_ETS = ets:new(?CONFIG_ETS, [named_table, set, protected]),
-    Server = self(),
-    ok = couch_config:register(
-        fun("compactions", Db, NewValue) ->
-            ok = gen_server:cast(Server, {config_update, Db, NewValue})
-        end),
+    ok = couch_config:register(fun ?MODULE:config_change/3),
     load_config(),
-    case start_os_mon() of
-    ok ->
-        Loop = spawn_link(fun() -> compact_loop(Server) end),
-        {ok, #state{loop_pid = Loop}};
-    Error ->
-        {stop, Error}
-    end.
+    Server = self(),
+    Loop = spawn_link(fun() -> compact_loop(Server) end),
+    {ok, #state{loop_pid = Loop}}.
 
 
-start_os_mon() ->
-    _ = application:load(os_mon),
-    ok = application:set_env(
-        os_mon, disk_space_check_interval, ?DISK_CHECK_PERIOD),
-    ok = application:set_env(os_mon, disk_almost_full_threshold, 1),
-    ok = application:set_env(os_mon, start_memsup, false),
-    ok = application:set_env(os_mon, start_cpu_sup, false),
-    _ = application:start(sasl),
-    case application:start(os_mon) of
-    ok ->
-        ok;
-    {error, {already_started, os_mon}} ->
-        ok;
-    Error ->
-        Error
-    end.
+config_change("compactions", DbName, NewValue) ->
+    ok = gen_server:cast(?MODULE, {config_update, DbName, NewValue}).
 
 
 handle_cast({config_update, DbName, deleted}, State) ->
@@ -92,13 +70,17 @@ handle_cast({config_update, DbName, deleted}, State) ->
     {noreply, State};
 
 handle_cast({config_update, DbName, Config}, #state{loop_pid = Loop} = State) ->
-    {ok, NewConfig} = parse_config(Config),
-    WasEmpty = (ets:info(?CONFIG_ETS, size) =:= 0),
-    true = ets:insert(?CONFIG_ETS, {?l2b(DbName), NewConfig}),
-    case WasEmpty of
-    true ->
-        Loop ! {self(), have_config};
-    false ->
+    case parse_config(DbName, Config) of
+    {ok, NewConfig} ->
+        WasEmpty = (ets:info(?CONFIG_ETS, size) =:= 0),
+        true = ets:insert(?CONFIG_ETS, {?l2b(DbName), NewConfig}),
+        case WasEmpty of
+        true ->
+            Loop ! {self(), have_config};
+        false ->
+            ok
+        end;
+    error ->
         ok
     end,
     {noreply, State}.
@@ -131,7 +113,12 @@ compact_loop(Parent) ->
                 nil ->
                     ok;
                 {ok, Config} ->
-                    maybe_compact_db(DbName, Config)
+                    case check_period(Config) of
+                    true ->
+                        maybe_compact_db(DbName, Config);
+                    false ->
+                        ok
+                    end
                 end,
                 {ok, Acc}
             end
@@ -141,7 +128,7 @@ compact_loop(Parent) ->
         receive {Parent, have_config} -> ok end;
     false ->
         PausePeriod = list_to_integer(
-            couch_config:get("compaction_daemon", "check_interval", "1")),
+            couch_config:get("compaction_daemon", "check_interval", "60")),
         ok = timer:sleep(PausePeriod * 1000)
     end,
     compact_loop(Parent).
@@ -150,6 +137,7 @@ compact_loop(Parent) ->
 maybe_compact_db(DbName, Config) ->
     case (catch couch_db:open_int(DbName, [])) of
     {ok, Db} ->
+        DDocNames = db_ddoc_names(Db),
         case can_db_compact(Config, Db) of
         true ->
             {ok, DbCompactPid} = couch_db:start_compact(Db),
@@ -157,9 +145,7 @@ maybe_compact_db(DbName, Config) ->
             case Config#config.parallel_view_compact of
             true ->
                 ViewsCompactPid = spawn_link(fun() ->
-                    {ok, Db2} = couch_db:open_int(DbName, []),
-                    maybe_compact_views(Db2, Config),
-                    couch_db:close(Db2)
+                    maybe_compact_views(DbName, DDocNames, Config)
                 end),
                 ViewsMonRef = erlang:monitor(process, ViewsCompactPid);
             false ->
@@ -168,20 +154,24 @@ maybe_compact_db(DbName, Config) ->
             DbMonRef = erlang:monitor(process, DbCompactPid),
             receive
             {'DOWN', DbMonRef, process, _, normal} ->
+                couch_db:close(Db),
                 case Config#config.parallel_view_compact of
                 true ->
                     ok;
                 false ->
-                    maybe_compact_views(Db, Config)
+                    maybe_compact_views(DbName, DDocNames, Config)
                 end;
             {'DOWN', DbMonRef, process, _, Reason} ->
+                couch_db:close(Db),
                 ?LOG_ERROR("Compaction daemon - an error ocurred while"
                     " compacting the database `~s`: ~p", [DbName, Reason])
             after TimeLeft ->
                 ?LOG_INFO("Compaction daemon - canceling compaction for database"
                     " `~s` because it's exceeding the allowed period.",
                     [DbName]),
-                ok = couch_db:cancel_compact(Db)
+                erlang:demonitor(DbMonRef, [flush]),
+                ok = couch_db:cancel_compact(Db),
+                couch_db:close(Db)
             end,
             case ViewsMonRef of
             nil ->
@@ -193,30 +183,48 @@ maybe_compact_db(DbName, Config) ->
                 end
             end;
         false ->
-            ok
-        end,
-        couch_db:close(Db);
+            couch_db:close(Db),
+            maybe_compact_views(DbName, DDocNames, Config)
+        end;
     _ ->
         ok
     end.
 
 
-maybe_compact_views(Db, Config) ->
-    {ok, _, ok} = couch_db:enum_docs(
+maybe_compact_views(_DbName, [], _Config) ->
+    ok;
+maybe_compact_views(DbName, [DDocName | Rest], Config) ->
+    case check_period(Config) of
+    true ->
+        case maybe_compact_view(DbName, DDocName, Config) of
+        ok ->
+            maybe_compact_views(DbName, Rest, Config);
+        timeout ->
+            ok
+        end;
+    false ->
+        ok
+    end.
+
+
+db_ddoc_names(Db) ->
+    {ok, _, DDocNames} = couch_db:enum_docs(
         Db,
-        fun(#full_doc_info{id = <<"_design/", Id/binary>>}, _, Acc) ->
-            maybe_compact_view(Db, Id, Config),
+        fun(#full_doc_info{id = <<"_design/", _/binary>>, deleted = true}, _, Acc) ->
             {ok, Acc};
+        (#full_doc_info{id = <<"_design/", Id/binary>>}, _, Acc) ->
+            {ok, [Id | Acc]};
         (_, _, Acc) ->
             {stop, Acc}
-        end, ok, [{start_key, <<"_design/">>}, {end_key_gt, <<"_design0">>}]).
+        end, [], [{start_key, <<"_design/">>}, {end_key_gt, <<"_design0">>}]),
+    DDocNames.
 
 
-maybe_compact_view(#db{name = DbName} = Db, GroupId, Config) ->
+maybe_compact_view(DbName, GroupId, Config) ->
     DDocId = <<"_design/", GroupId/binary>>,
-    case (catch couch_view:get_group_info(Db, DDocId)) of
+    case (catch couch_view:get_group_info(DbName, DDocId)) of
     {ok, GroupInfo} ->
-        case can_view_compact(Config, Db, GroupId, GroupInfo) of
+        case can_view_compact(Config, DbName, GroupId, GroupInfo) of
         true ->
             {ok, CompactPid} = couch_view_compactor:start_compact(DbName, GroupId),
             TimeLeft = compact_time_left(Config),
@@ -227,17 +235,22 @@ maybe_compact_view(#db{name = DbName} = Db, GroupId, Config) ->
             {'DOWN', MonRef, process, CompactPid, Reason} ->
                 ?LOG_ERROR("Compaction daemon - an error ocurred while compacting"
                     " the view group `~s` from database `~s`: ~p",
-                    [GroupId, DbName, Reason])
+                    [GroupId, DbName, Reason]),
+                ok
             after TimeLeft ->
                 ?LOG_INFO("Compaction daemon - canceling the compaction for the "
                     "view group `~s` of the database `~s` because it's exceeding"
                     " the allowed period.", [GroupId, DbName]),
-                ok = couch_view_compactor:cancel_compact(DbName, GroupId)
+                erlang:demonitor(MonRef, [flush]),
+                ok = couch_view_compactor:cancel_compact(DbName, GroupId),
+                timeout
             end;
         false ->
             ok
         end;
-    _ ->
+    Error ->
+        ?LOG_ERROR("Error opening view group `~s` from database `~s`: ~p",
+            [GroupId, DbName, Error]),
         ok
     end.
 
@@ -297,7 +310,7 @@ can_db_compact(#config{db_frag = Threshold} = Config, Db) ->
         end
     end.
 
-can_view_compact(Config, Db, GroupId, GroupInfo) ->
+can_view_compact(Config, DbName, GroupId, GroupInfo) ->
     case check_period(Config) of
     false ->
         false;
@@ -309,7 +322,7 @@ can_view_compact(Config, Db, GroupId, GroupInfo) ->
             {Frag, SpaceRequired} = frag(GroupInfo),
             ?LOG_DEBUG("Fragmentation for view group `~s` (database `~s`) is "
                 "~p%, estimated space for compaction is ~p bytes.",
-                [GroupId, Db#db.name, Frag, SpaceRequired]),
+                [GroupId, DbName, Frag, SpaceRequired]),
             case check_frag(Config#config.view_frag, Frag) of
             false ->
                 false;
@@ -323,7 +336,7 @@ can_view_compact(Config, Db, GroupId, GroupInfo) ->
                         "compaction (database `~s`): the estimated necessary "
                         "disk space is about ~p bytes but the currently available"
                         " disk space is ~p bytes.",
-                        [GroupId, Db#db.name, SpaceRequired, Free]),
+                        [GroupId, DbName, SpaceRequired, Free]),
                     false
                 end
             end
@@ -377,52 +390,88 @@ space_required(DataSize) ->
 load_config() ->
     lists:foreach(
         fun({DbName, ConfigString}) ->
-            case (catch parse_config(ConfigString)) of
+            case parse_config(DbName, ConfigString) of
             {ok, Config} ->
                 true = ets:insert(?CONFIG_ETS, {?l2b(DbName), Config});
-            _ ->
-                ?LOG_ERROR("Invalid compaction configuration for database "
-                    "`~s`: `~s`", [DbName, ConfigString])
+            error ->
+                ok
             end
         end,
         couch_config:get("compactions")).
 
+parse_config(DbName, ConfigString) ->
+    case (catch do_parse_config(ConfigString)) of
+    {ok, Conf} ->
+        {ok, Conf};
+    incomplete_period ->
+        ?LOG_ERROR("Incomplete period ('to' or 'from' missing) in the compaction"
+            " configuration for database `~s`", [DbName]),
+        error;
+    _ ->
+        ?LOG_ERROR("Invalid compaction configuration for database "
+            "`~s`: `~s`", [DbName, ConfigString]),
+        error
+    end.
 
-parse_config(ConfigString) ->
-    KVs = lists:map(
-        fun(Pair) ->
-            {match, [K, V]} = re:run(Pair, ?KV_RE, [{capture, [1, 2], list}]),
-            {K, V}
-        end,
-        string:tokens(string:to_lower(ConfigString), ",")),
-    Config = lists:foldl(
-        fun({"db_fragmentation", V0}, Config) ->
-            [V] = string:tokens(V0, "%"),
-            Config#config{db_frag = list_to_integer(V)};
-        ({"view_fragmentation", V0}, Config) ->
-            [V] = string:tokens(V0, "%"),
-            Config#config{view_frag = list_to_integer(V)};
-        ({"period", V}, Config) ->
-            {match, [From, To]} = re:run(
-                V, ?PERIOD_RE, [{capture, [1, 2], list}]),
-            [FromHH, FromMM] = string:tokens(From, ":"),
-            [ToHH, ToMM] = string:tokens(To, ":"),
-            Config#config{
-                period = #period{
-                    from = {list_to_integer(FromHH), list_to_integer(FromMM)},
-                    to = {list_to_integer(ToHH), list_to_integer(ToMM)}
-                }
-            };
-        ({"strict_window", V}, Config) when V =:= "yes"; V =:= "true" ->
-            Config#config{cancel = true};
-        ({"strict_window", V}, Config) when V =:= "no"; V =:= "false" ->
-            Config#config{cancel = false};
-        ({"parallel_view_compaction", V}, Config) when V =:= "yes"; V =:= "true" ->
-            Config#config{parallel_view_compact = true};
-        ({"parallel_view_compaction", V}, Config) when V =:= "no"; V =:= "false" ->
-            Config#config{parallel_view_compact = false}
-        end, #config{}, KVs),
-    {ok, Config}.
+do_parse_config(ConfigString) ->
+    {ok, ConfProps} = couch_util:parse_term(ConfigString),
+    {ok, #config{period = Period} = Conf} = config_record(ConfProps, #config{}),
+    case Period of
+    nil ->
+        {ok, Conf};
+    #period{from = From, to = To} when From =/= nil, To =/= nil ->
+        {ok, Conf};
+    #period{} ->
+        incomplete_period
+    end.
+
+config_record([], Config) ->
+    {ok, Config};
+
+config_record([{db_fragmentation, V} | Rest], Config) ->
+    [Frag] = string:tokens(V, "%"),
+    config_record(Rest, Config#config{db_frag = list_to_integer(Frag)});
+
+config_record([{view_fragmentation, V} | Rest], Config) ->
+    [Frag] = string:tokens(V, "%"),
+    config_record(Rest, Config#config{view_frag = list_to_integer(Frag)});
+
+config_record([{from, V} | Rest], #config{period = Period0} = Config) ->
+    Time = parse_time(V),
+    Period = case Period0 of
+    nil ->
+        #period{from = Time};
+    #period{} ->
+        Period0#period{from = Time}
+    end,
+    config_record(Rest, Config#config{period = Period});
+
+config_record([{to, V} | Rest], #config{period = Period0} = Config) ->
+    Time = parse_time(V),
+    Period = case Period0 of
+    nil ->
+        #period{to = Time};
+    #period{} ->
+        Period0#period{to = Time}
+    end,
+    config_record(Rest, Config#config{period = Period});
+
+config_record([{strict_window, true} | Rest], Config) ->
+    config_record(Rest, Config#config{cancel = true});
+
+config_record([{strict_window, false} | Rest], Config) ->
+    config_record(Rest, Config#config{cancel = false});
+
+config_record([{parallel_view_compaction, true} | Rest], Config) ->
+    config_record(Rest, Config#config{parallel_view_compact = true});
+
+config_record([{parallel_view_compaction, false} | Rest], Config) ->
+    config_record(Rest, Config#config{parallel_view_compact = false}).
+
+
+parse_time(String) ->
+    [HH, MM] = string:tokens(String, ":"),
+    {list_to_integer(HH), list_to_integer(MM)}.
 
 
 free_space(Path) ->

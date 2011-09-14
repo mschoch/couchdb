@@ -237,7 +237,6 @@ queue_fetch_loop(Source, Target, Parent, Cp, ChangesManager) ->
     {changes, ChangesManager, Changes, ReportSeq} ->
         Target2 = open_db(Target),
         {IdRevs, NotMissingCount} = find_missing(Changes, Target2),
-        ok = gen_server:cast(Cp, {report_seq, ReportSeq}),
         case Source of
         #db{} ->
             Source2 = open_db(Source),
@@ -252,7 +251,7 @@ queue_fetch_loop(Source, Target, Parent, Cp, ChangesManager) ->
         Stats2 = Stats#rep_stats{
             missing_checked = Stats#rep_stats.missing_checked + NotMissingCount
         },
-        ok = gen_server:cast(Cp, {report_seq_done, ReportSeq, Stats2}),
+        ok = gen_server:call(Cp, {report_seq_done, ReportSeq, Stats2}, infinity),
         ?LOG_DEBUG("Worker reported completion of seq ~p", [ReportSeq]),
         queue_fetch_loop(Source, Target, Parent, Cp, ChangesManager)
     end.
