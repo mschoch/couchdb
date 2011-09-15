@@ -37,11 +37,13 @@
 debug(Format, Args) ->
     {ConsoleMsg, FileMsg} = get_log_messages(self(), debug, Format, Args),
     ok = disk_log:balog(?DISK_LOGGER, FileMsg),
+    jninif:cast(log_debug, ConsoleMsg),
     gen_event:sync_notify(error_logger, {couch_debug, ConsoleMsg}).
 
 info(Format, Args) ->
     {ConsoleMsg, FileMsg} = get_log_messages(self(), info, Format, Args),
     ok = disk_log:balog(?DISK_LOGGER, FileMsg),
+    jninif:cast(log_info, ConsoleMsg),
     gen_event:sync_notify(error_logger, {couch_info, ConsoleMsg}).
 
 error(Format, Args) ->
@@ -49,6 +51,7 @@ error(Format, Args) ->
     % Synchronous logging for error messages only. We want to reduce the
     % chances of missing any if server is killed.
     ok = disk_log:blog(?DISK_LOGGER, FileMsg),
+    jninif:cast(log_error, ConsoleMsg),
     gen_event:sync_notify(error_logger, {couch_error, ConsoleMsg}).
 
 
