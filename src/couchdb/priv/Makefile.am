@@ -38,7 +38,8 @@ ICU_LOCAL_FLAGS = $(ICU_LOCAL_CFLAGS) $(ICU_LOCAL_LDFLAGS)
 ICU_LOCAL_LIBS=-licuuc -licudata -licui18n
 endif
 
-couchprivlib_LTLIBRARIES = couch_icu_driver.la
+#couchprivlib_LTLIBRARIES = couch_icu_driver.la
+couchprivlib_LTLIBRARIES = 
 if USE_OTP_NIFS
 couchprivlib_LTLIBRARIES += couch_ejson_compare.la
 couch_ejson_compare_la_SOURCES = couch_ejson_compare/couch_ejson_compare.c
