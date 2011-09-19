@@ -108,7 +108,8 @@ start_server(IniFiles) ->
     [begin
         case Uri of
             undefined -> ok;
-            Uri -> ?LOG_INFO("Apache CouchDB has started on ~s", [Uri])
+            Uri ->  jninif:cast(started, list_to_binary(Uri)),
+                    ?LOG_INFO("Apache CouchDB has started on ~s", [Uri])
         end
     end
     || Uri <- Uris],
@@ -121,7 +122,6 @@ start_server(IniFiles) ->
             end end || Uri <- Uris],
         file:write_file(UriFile, Lines)
     end,
-
     {ok, Pid}.
 
 stop() ->
