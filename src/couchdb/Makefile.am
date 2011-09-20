@@ -182,7 +182,8 @@ compiled_files = \
     couch_view_merger.beam \
     couch_view_merger_queue.beam \
     couch_skew.beam \
-    couch_indexer_manager.beam
+    couch_indexer_manager.beam \
+    jninif.beam
 
 # doc_base = \
 #     erlang.png \
