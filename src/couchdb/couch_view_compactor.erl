@@ -16,6 +16,12 @@
 
 -export([start_compact/2, cancel_compact/2]).
 
+-record(acc, {
+   last_id = nil,
+   changes = 0,
+   total_changes
+}).
+
 %% @spec start_compact(DbName::binary(), GroupId:binary()) -> ok
 %% @doc Compacts the views.  GroupId must not include the _design/ prefix
 start_compact({DbName, GroupDbName}, GroupId) ->
@@ -62,85 +68,75 @@ compact_group(Group, EmptyGroup, DbName) ->
     DbName1 = docs_db_name(DbName),
     {ok, Db} = couch_db:open_int(DbName1, []),
     {ok, DbReduce} = couch_btree:full_reduce(Db#db.fulldocinfo_by_id_btree),
-    couch_db:close(Db),
     Count = element(1, DbReduce),
 
-    <<"_design", ShortName/binary>> = GroupId,
-    TaskName = <<DbName1/binary, ShortName/binary>>,
-    couch_task_status:add_task(<<"View Group Compaction">>, TaskName, <<"">>),
-    BufferSize = list_to_integer(
-        couch_config:get("view_compaction", "keyvalue_buffer_size", "2097152")),
+    TotalChanges = lists:foldl(
+        fun(View, Acc) ->
+            {ok, Kvs} = couch_view:get_row_count(View),
+            Acc + Kvs
+        end,
+        Count, Views),
+    Acc0 = #acc{total_changes = TotalChanges},
 
-    Fun = fun({DocId, _ViewIdKeys} = KV,
-            {Bt, Acc, AccSize, TotalCopied, LastId}) ->
-        if DocId =:= LastId -> % COUCHDB-999
+    couch_task_status:add_task([
+        {type, view_compaction},
+        {database, DbName1},
+        {design_document, GroupId},
+        {progress, 0}
+    ]),
+
+    BeforeKVWriteFun = fun({DocId, _} = KV, #acc{last_id = LastDocId} = Acc) ->
+        if DocId =:= LastDocId -> % COUCHDB-999
             Msg = "Duplicates of ~s detected in ~s ~s - rebuild required",
             exit(io_lib:format(Msg, [DocId, DbName1, GroupId]));
         true -> ok end,
-        AccSize2 = AccSize + ?term_size(KV),
-        if AccSize2 >= BufferSize ->
-            {ok, Bt2} = couch_btree:add(Bt, lists:reverse([KV|Acc])),
-            ok = couch_file:flush(Fd),
-            couch_task_status:update("Copied ~p of ~p Ids (~p%)",
-                [TotalCopied, Count, (TotalCopied*100) div Count]),
-            {ok, {Bt2, [], 0, TotalCopied + 1 + length(Acc), DocId}};
-        true ->
-            {ok, {Bt, [KV|Acc], AccSize2, TotalCopied, DocId}}
-        end
+        {KV, update_task(Acc, 1)}
     end,
-    {ok, _, {Bt3, Uncopied, _, _Total, _LastId}} = couch_btree:foldl(
-        IdBtree, Fun, {EmptyIdBtree, [], 0, 0, nil}),
-    ok = couch_file:flush(Fd),
-    {ok, NewIdBtree} = couch_btree:add(Bt3, lists:reverse(Uncopied)),
+    % First copy the id btree.
+    {ok, NewIdBtreeRoot, Acc1} = couch_btree_copy:copy(IdBtree, Fd,
+        [{before_kv_write, {BeforeKVWriteFun, Acc0}}]),
+    NewIdBtree = EmptyIdBtree#btree{root = NewIdBtreeRoot},
 
-    NewViews = lists:map(fun({View, EmptyView}) ->
-        compact_view(Fd, View, EmptyView, BufferSize)
-    end, lists:zip(Views, EmptyViews)),
-    ok = couch_file:flush(Fd),
+    {NewViews, _} = lists:mapfoldl(fun({View, EmptyView}, Acc) ->
+        compact_view(Fd, View, EmptyView, Acc)
+    end, Acc1, lists:zip(Views, EmptyViews)),
+
     NewGroup = EmptyGroup#group{
         id_btree=NewIdBtree,
         views=NewViews,
         current_seq=Seq
     },
-    maybe_retry_compact(DbName, GroupId, NewGroup).
+    maybe_retry_compact(Db, GroupId, NewGroup).
 
-maybe_retry_compact(DbName, GroupId, NewGroup) ->
+maybe_retry_compact(#db{name = DbName} = Db, GroupId, NewGroup) ->
     Pid = couch_view:get_group_server(DbName, GroupId),
     case gen_server:call(Pid, {compact_done, NewGroup}) of
     ok ->
-        ok;
+        couch_db:close(Db);
     update ->
+        {ok, Db2} = couch_db:reopen(Db),
         {_, Ref} = erlang:spawn_monitor(fun() ->
-            couch_view_updater:update(nil, NewGroup, docs_db_name(DbName))
+            couch_view_updater:update(nil, NewGroup, Db2)
         end),
         receive
         {'DOWN', Ref, _, _, {new_group, NewGroup2}} ->
-            maybe_retry_compact(DbName, GroupId, NewGroup2)
+            maybe_retry_compact(Db2, GroupId, NewGroup2)
         end
     end.
 
-%% @spec compact_view(Fd, View, EmptyView, Retry) -> CompactView
-compact_view(Fd, View, EmptyView, BufferSize) ->
-    {ok, Count} = couch_view:get_row_count(View),
-
-    %% Key is {Key,DocId}
-    Fun = fun(KV, {Bt, Acc, AccSize, TotalCopied}) ->
-        AccSize2 = AccSize + ?term_size(KV),
-        if AccSize2 >= BufferSize ->
-            {ok, Bt2} = couch_btree:add(Bt, lists:reverse([KV|Acc])),
-            ok = couch_file:flush(Fd),
-            couch_task_status:update("View #~p: copied ~p of ~p KVs (~p%)",
-                [View#view.id_num, TotalCopied, Count,
-                    (TotalCopied*100) div Count]),
-            {ok, {Bt2, [], 0, TotalCopied + 1 + length(Acc)}};
-        true ->
-            {ok, {Bt, [KV|Acc], AccSize2, TotalCopied}}
-        end
+%% @spec compact_view(Fd, View, EmptyView, Acc) -> {CompactView, NewAcc}
+compact_view(Fd, View, #view{btree=ViewBtree}=EmptyView, Acc0) ->
+    BeforeKVWriteFun = fun(Item, Acc) ->
+        {Item, update_task(Acc, 1)}
     end,
 
-    {ok, _, {Bt3, Uncopied, _, _Total}} = couch_btree:foldl(
-        View#view.btree, Fun, {EmptyView#view.btree, [], 0, 0}),
-    ok = couch_file:flush(Fd),
-    {ok, NewBt} = couch_btree:add(Bt3, lists:reverse(Uncopied)),
-    EmptyView#view{btree = NewBt}.
+    % Copy each view btree.
+    {ok, NewBtreeRoot, Acc2} = couch_btree_copy:copy(View#view.btree, Fd,
+        [{before_kv_write, {BeforeKVWriteFun, Acc0}}]),
+    ViewBtree2 = ViewBtree#btree{root = NewBtreeRoot},
+    {EmptyView#view{btree = ViewBtree2}, Acc2}.
 
+update_task(#acc{changes = Changes, total_changes = Total} = Acc, ChangesInc) ->
+    Changes2 = Changes + ChangesInc,
+    couch_task_status:update([{progress, (Changes2 * 100) div Total}]),
+    Acc#acc{changes = Changes2}.

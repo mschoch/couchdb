@@ -159,11 +159,12 @@ CPPFLAGS="-I/opt/local/include $CPPFLAGS"
 CPPFLAGS="$FLAGS $CPPFLAGS"
 LDFLAGS="$FLAGS $LDFLAGS"
 
-# The erlang cc.sh/ld.sh scripts will convert a -O option
-# into the same optimization flags erlang itself uses.
-CFLAGS="-O2 $CFLAGS"
+ac_test_ERLC_FLAGS=${ERLC_FLAGS+set}
+if test "$ac_test_ERLCFLAGS" != set; then
+  ERLC_FLAGS=+debug_info
+fi
 
-LIB_FLAGS="-L/usr/local/lib -L/opt/local/lib"
+LIB_FLAGS="$JS_LIB_FLAGS -L/usr/local/lib -L/opt/local/lib"
 LIBS="$LIB_FLAGS $LIBS"
 
 AM_CONDITIONAL([WINDOWS], [test x$IS_WINDOWS = xTRUE])

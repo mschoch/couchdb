@@ -72,10 +72,15 @@
 }).
 
 
-replicate(#rep{id = RepId, options = Options} = Rep) ->
+replicate(#rep{id = RepId, options = Options, user_ctx = UserCtx} = Rep) ->
     case get_value(cancel, Options, false) of
     true ->
-        cancel_replication(RepId);
+        case get_value(id, Options, nil) of
+        nil ->
+            cancel_replication(RepId);
+        RepId2 ->
+            cancel_replication(RepId2, UserCtx)
+        end;
     false ->
         {ok, Listener} = rep_result_listener(RepId),
         Result = do_replication_loop(Rep),
@@ -84,12 +89,12 @@ replicate(#rep{id = RepId, options = Options} = Rep) ->
     end.
 
 
-do_replication_loop(#rep{id = {BaseId,_} = Id, options = Options} = Rep) ->
+do_replication_loop(#rep{id = {BaseId, Ext} = Id, options = Options} = Rep) ->
     case async_replicate(Rep) of
     {ok, _Pid} ->
         case get_value(continuous, Options, false) of
         true ->
-            {ok, {continuous, ?l2b(BaseId)}};
+            {ok, {continuous, ?l2b(BaseId ++ Ext)}};
         false ->
             wait_for_result(Id)
         end;
@@ -176,20 +181,47 @@ wait_for_result(RepId) ->
 
 cancel_replication({BaseId, Extension}) ->
     FullRepId = BaseId ++ Extension,
+    ?LOG_INFO("Canceling replication `~s`...", [FullRepId]),
     case supervisor:terminate_child(couch_rep_sup, FullRepId) of
     ok ->
+        ?LOG_INFO("Replication `~s` canceled.", [FullRepId]),
         case supervisor:delete_child(couch_rep_sup, FullRepId) of
             ok ->
-                {ok, {cancelled, ?l2b(BaseId)}};
+                {ok, {cancelled, ?l2b(FullRepId)}};
             {error, not_found} ->
-                {ok, {cancelled, ?l2b(BaseId)}};
+                {ok, {cancelled, ?l2b(FullRepId)}};
             Error ->
                 Error
         end;
     Error ->
+        ?LOG_ERROR("Error canceling replication `~s`: ~p", [FullRepId, Error]),
         Error
     end.
 
+cancel_replication(RepId, #user_ctx{name = Name, roles = Roles}) ->
+    case lists:member(<<"_admin">>, Roles) of
+    true ->
+        cancel_replication(RepId);
+    false ->
+        {BaseId, Ext} = RepId,
+        case lists:keysearch(
+            BaseId ++ Ext, 1, supervisor:which_children(couch_rep_sup)) of
+        {value, {_, Pid, _, _}} when is_pid(Pid) ->
+            case (catch gen_server:call(Pid, get_details, infinity)) of
+            {ok, #rep{user_ctx = #user_ctx{name = Name}}} ->
+                cancel_replication(RepId);
+            {ok, _} ->
+                throw({unauthorized,
+                    <<"Can't cancel a replication triggered by another user">>});
+            {'EXIT', {noproc, {gen_server, call, _}}} ->
+                {error, not_found};
+            Error ->
+                throw(Error)
+            end;
+        _ ->
+            {error, not_found}
+        end
+    end.
 
 init(InitArgs) ->
     try
@@ -213,7 +245,8 @@ do_init(#rep{options = Options, id = {BaseId, Ext}} = Rep) ->
         source_name = SourceName,
         target_name = TargetName,
         start_seq = {_Ts, StartSeq},
-        source_seq = SourceCurSeq
+        source_seq = SourceCurSeq,
+        committed_seq = {_, CommittedSeq}
     } = State = init_state(Rep),
 
     NumWorkers = get_value(worker_processes, Options),
@@ -240,11 +273,22 @@ do_init(#rep{options = Options, id = {BaseId, Ext}} = Rep) ->
         end,
         lists:seq(1, NumWorkers)),
 
-    couch_task_status:add_task(
-        "Replication",
-         io_lib:format("`~s`: `~s` -> `~s`",
-            [BaseId ++ Ext, SourceName, TargetName]),
-         io_lib:format("Processed ~p / ~p changes", [StartSeq, SourceCurSeq])),
+    couch_task_status:add_task([
+        {type, replication},
+        {replication_id, ?l2b(BaseId ++ Ext)},
+        {source, ?l2b(SourceName)},
+        {target, ?l2b(TargetName)},
+        {continuous, get_value(continuous, Options, false)},
+        {revisions_checked, 0},
+        {missing_revisions_found, 0},
+        {docs_read, 0},
+        {docs_written, 0},
+        {doc_write_failures, 0},
+        {source_seq, SourceCurSeq},
+        {checkpointed_source_seq, CommittedSeq},
+        {progress, 0}
+    ]),
+    couch_task_status:set_update_frequency(1000),
 
     % Until OTP R14B03:
     %
@@ -337,9 +381,13 @@ handle_info({'EXIT', Pid, Reason}, #rep_state{workers = Workers} = State) ->
     end.
 
 
-handle_call({report_seq_done, Seq, StatsInc}, _From,
+handle_call(get_details, _From, #rep_state{rep_details = Rep} = State) ->
+    {reply, {ok, Rep}, State};
+
+handle_call({report_seq_done, Seq, StatsInc}, From,
     #rep_state{seqs_in_progress = SeqsInProgress, highest_seq_done = HighestDone,
         current_through_seq = ThroughSeq, stats = Stats} = State) ->
+    gen_server:reply(From, ok),
     {NewThroughSeq0, NewSeqsInProgress} = case SeqsInProgress of
     [Seq | Rest] ->
         {Seq, Rest};
@@ -360,8 +408,6 @@ handle_call({report_seq_done, Seq, StatsInc}, _From,
         [Seq, ThroughSeq, NewThroughSeq, HighestDone,
             NewHighestDone, SeqsInProgress, NewSeqsInProgress]),
     SourceCurSeq = source_cur_seq(State),
-    couch_task_status:update(
-        "Processed ~p / ~p changes", [element(2, NewThroughSeq), SourceCurSeq]),
     NewState = State#rep_state{
         stats = sum_stats([Stats, StatsInc]),
         current_through_seq = NewThroughSeq,
@@ -369,7 +415,8 @@ handle_call({report_seq_done, Seq, StatsInc}, _From,
         highest_seq_done = NewHighestDone,
         source_seq = SourceCurSeq
     },
-    {reply, ok, NewState}.
+    update_task(NewState),
+    {noreply, NewState}.
 
 
 handle_cast({db_compacted, DbName},
@@ -425,7 +472,7 @@ terminate(Reason, State) ->
 
 
 terminate_cleanup(State) ->
-    couch_task_status:update("Finishing"),
+    update_task(State),
     stop_db_compaction_notifier(State#rep_state.source_db_compaction_notifier),
     stop_db_compaction_notifier(State#rep_state.target_db_compaction_notifier),
     couch_api_wrap:db_close(State#rep_state.source),
@@ -604,7 +651,10 @@ checkpoint_interval(_State) ->
     5000.
 
 do_checkpoint(#rep_state{current_through_seq=Seq, committed_seq=Seq} = State) ->
-    {ok, State};
+    SourceCurSeq = source_cur_seq(State),
+    NewState = State#rep_state{source_seq = SourceCurSeq},
+    update_task(NewState),
+    {ok, NewState};
 do_checkpoint(State) ->
     #rep_state{
         source_name=SourceName,
@@ -678,12 +728,15 @@ do_checkpoint(State) ->
                 Source, SourceLog#doc{body = NewRepHistory}, source),
             {TgtRevPos, TgtRevId} = update_checkpoint(
                 Target, TargetLog#doc{body = NewRepHistory}, target),
+            SourceCurSeq = source_cur_seq(State),
             NewState = State#rep_state{
+                source_seq = SourceCurSeq,
                 checkpoint_history = NewRepHistory,
                 committed_seq = NewTsSeq,
                 source_log = SourceLog#doc{revs={SrcRevPos, [SrcRevId]}},
                 target_log = TargetLog#doc{revs={TgtRevPos, [TgtRevId]}}
             },
+            update_task(NewState),
             {ok, NewState}
         catch throw:{checkpoint_commit_failure, _} = Failure ->
             Failure
@@ -858,3 +911,32 @@ source_cur_seq(#rep_state{source = #httpdb{} = Db, source_seq = Seq}) ->
 source_cur_seq(#rep_state{source = Db, source_seq = Seq}) ->
     {ok, Info} = couch_api_wrap:get_db_info(Db),
     get_value(<<"update_seq">>, Info, Seq).
+
+
+update_task(State) ->
+    #rep_state{
+        current_through_seq = {_, CurSeq},
+        committed_seq = {_, CommittedSeq},
+        source_seq = SourceCurSeq,
+        stats = Stats
+    } = State,
+    couch_task_status:update([
+        {revisions_checked, Stats#rep_stats.missing_checked},
+        {missing_revisions_found, Stats#rep_stats.missing_found},
+        {docs_read, Stats#rep_stats.docs_read},
+        {docs_written, Stats#rep_stats.docs_written},
+        {doc_write_failures, Stats#rep_stats.doc_write_failures},
+        {source_seq, SourceCurSeq},
+        {checkpointed_source_seq, CommittedSeq},
+        case is_number(CurSeq) andalso is_number(SourceCurSeq) of
+        true ->
+            case SourceCurSeq of
+            0 ->
+                {progress, 0};
+            _ ->
+                {progress, (CurSeq * 100) div SourceCurSeq}
+            end;
+        false ->
+            {progress, null}
+        end
+    ]).

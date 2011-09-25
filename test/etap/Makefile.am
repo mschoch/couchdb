@@ -40,12 +40,15 @@ EXTRA_DIST = \
     011-file-headers.t \
     020-btree-basics.t \
     021-btree-reductions.t \
+    022-btree-copy.t \
+    023-btree-guided-purge.t \
     030-doc-from-json.t \
     031-doc-to-json.t \
     040-util.t \
     041-uuid-gen-seq.ini \
     041-uuid-gen-utc.ini \
     041-uuid-gen.t \
+    042-work-queue.t \
     050-stream.t \
     060-kt-merging.t \
     061-kt-missing-leaves.t \
@@ -54,6 +57,7 @@ EXTRA_DIST = \
     064-kt-counting.t \
     065-kt-stemming.t \
     070-couch-db.t \
+    073-changes.t \
     080-config-get-set.t \
     081-config-override.1.ini \
     081-config-override.2.ini \
@@ -84,7 +88,9 @@ EXTRA_DIST = \
     180-http-proxy.t \
     190-json-stream-parse.t \
     200-view-group-no-db-leaks.t \
+    201-view-group-shutdown.t \
     210-os-proc-pool.t \
     220-compaction-daemon.t \
     230-httpc-pool.t \
-    240-replication-compact.t
+    240-replication-compact.t \
+    241-replication-large-atts.t
