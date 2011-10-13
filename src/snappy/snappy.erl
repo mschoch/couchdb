@@ -22,22 +22,15 @@
 
 
 init() ->
-    SoName = case code:priv_dir(?MODULE) of
-    {error, bad_name} ->
-        case filelib:is_dir(filename:join(["..", "priv"])) of
-        true ->
-            filename:join(["..", "priv", "snappy_nif"]);
-        false ->
-            filename:join(["priv", "snappy_nif"])
-        end;
-    Dir ->
-        filename:join(Dir, "snappy_nif")
-    end,
-    (catch erlang:load_nif(SoName, 0)),
-    case erlang:system_info(otp_release) of
-    "R13B03" -> true;
-    _ -> ok
-    end.
+    io:format("snappy NIF on_load called.~n"),
+    {ok, LibPath} = init:get_argument(native_lib_path),
+    Status = erlang:load_nif(hd(hd(LibPath)) ++ "/libsnappy_nif", 0),
+    case Status of
+        ok -> ok;
+        {error, {E, Str}} ->
+            error_logger:error_msg("Error loading snappy NIF: ~p, ~s~n", [E,Str]),
+            Status
+     end.
 
 
 compress(_IoList) ->
