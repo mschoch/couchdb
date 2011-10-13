@@ -17,6 +17,7 @@
 
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
 
 #include "erl_nif_compat.h"
 #include "google-snappy/snappy.h"
@@ -32,6 +33,30 @@
 #else
 #define BEGIN_C
 #define END_C
+#endif
+
+#if defined(__GNUC__) && !defined(__EXCEPTIONS__)
+#define snappy_try if (true)
+#define snappy_catch(t,v) if (false)
+#define snappy_catch_any() if (false)
+
+static inline void
+snappy_throw_bad_alloc(void)
+{
+    std::abort();
+}
+#endif
+
+#ifndef snappy_try
+#define snappy_try try
+#define snappy_catch(t,v) catch(t v)
+#define snappy_catch_any() catch(...)
+
+static inline void
+snappy_throw_bad_alloc(void)
+{
+    throw std:bad_alloc();
+}
 #endif
 
 #define SC_PTR(c) reinterpret_cast<char *>(c)
@@ -56,7 +81,7 @@ SnappyNifSink::SnappyNifSink(ErlNifEnv* e) : env(e), length(0)
 {
     if(!enif_alloc_binary_compat(env, 0, &bin)) {
         env = NULL;
-        throw std::bad_alloc();
+        snappy_throw_bad_alloc();
     }
 }
 
@@ -85,7 +110,7 @@ SnappyNifSink::GetAppendBuffer(size_t len, char* scratch)
         sz = (len * 4) < 8192 ? 8192 : (len * 4);
 
         if(!enif_realloc_binary_compat(env, &bin, bin.size + sz)) {
-            throw std::bad_alloc();
+            snappy_throw_bad_alloc();
         }
     }
 
@@ -97,7 +122,7 @@ SnappyNifSink::getBin()
 {
     if(bin.size > length) {
         if(!enif_realloc_binary_compat(env, &bin, length)) {
-            throw std::bad_alloc();
+            snappy_throw_bad_alloc();
         }
     }
     return bin;
@@ -143,14 +168,14 @@ snappy_compress(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         return enif_make_badarg(env);
     }
 
-    try {
+    snappy_try {
         snappy::ByteArraySource source(SC_PTR(input.data), input.size);
         SnappyNifSink sink(env);
         snappy::Compress(&source, &sink);
         return make_ok(env, enif_make_binary(env, &sink.getBin()));
-    } catch(std::bad_alloc e) {
+    } snappy_catch(std::bad_alloc &, e) {
         return make_error(env, "insufficient_memory");
-    } catch(...) {
+    } snappy_catch_any() {
         return make_error(env, "unknown");
     }
 }
@@ -167,7 +192,7 @@ snappy_decompress(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         return enif_make_badarg(env);
     }
 
-    try {
+    snappy_try {
         if(!snappy::GetUncompressedLength(SC_PTR(bin.data), bin.size, &len)) {
             return make_error(env, "data_not_compressed");
         }
@@ -182,7 +207,7 @@ snappy_decompress(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         }
 
         return make_ok(env, enif_make_binary(env, &ret));
-    } catch(...) {
+    } snappy_catch_any() {
         return make_error(env, "unknown");
     }
 }
@@ -198,12 +223,12 @@ snappy_uncompressed_length(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         return enif_make_badarg(env);
     }
 
-    try {
+    snappy_try {
         if(!snappy::GetUncompressedLength(SC_PTR(bin.data), bin.size, &len)) {
             return make_error(env, "data_not_compressed");
         }
         return make_ok(env, enif_make_ulong(env, len));
-    } catch(...) {
+    } snappy_catch_any() {
         return make_error(env, "unknown");
     }
 }
@@ -218,13 +243,13 @@ snappy_is_valid(ErlNifEnv* env, int argc, const ERL_NIF_TERM argv[])
         return enif_make_badarg(env);
     }
 
-    try {
+    snappy_try {
         if(snappy::IsValidCompressedBuffer(SC_PTR(bin.data), bin.size)) {
             return make_atom(env, "true");
         } else {
             return make_atom(env, "false");
         }
-    } catch(...) {
+    } snappy_catch_any() {
         return make_error(env, "unknown");
     }
 }
